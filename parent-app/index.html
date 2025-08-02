@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Copilot - Parent App</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="medical-data.js"></script>
+    <script type="module" src="ozwell-agent-sim.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Medical Practice Management System</h1>
+        
+        <div class="controls">
+            <button id="runSimulation" class="btn btn-primary">Run Simulation</button>
+            <button id="showContext" class="btn btn-secondary">Show Current Context</button>
+        </div>
+
+        <div id="contextDisplay" class="context-display" style="display: none;">
+            <h3>Current Medical Context</h3>
+            <pre id="contextJson"></pre>
+        </div>
+
+        <div class="status-log">
+            <h3>System Log</h3>
+            <div id="logContainer"></div>
+        </div>
+    </div>
+</body>
+</html>

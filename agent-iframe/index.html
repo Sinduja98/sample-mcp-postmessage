@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical MCP Agent</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="main.js"></script>
+    <script type="module" src="mcp-client.js"></script>
+    <script type="module" src="medical-mcp-server.js"></script>
+    <script type="module" src="ozwell-integration.js"></script>
+</head>
+<body>
+    <div class="agent-container">
+        <div class="agent-header">
+            <h2>🏥 Medical AI Copilot</h2>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span id="statusText">Initializing...</span>
+            </div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="welcome-message">
+                <p>Hello! I'm your medical AI assistant. I can help you manage medications, allergies, and patient information.</p>
+                <p>I'm currently connected to the medical practice system and ready to assist.</p>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="userInput" placeholder="Ask me about medications, allergies, or patient care..." />
+            <button id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
