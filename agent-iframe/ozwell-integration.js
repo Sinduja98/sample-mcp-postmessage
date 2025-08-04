@@ -1,7 +1,7 @@
 // Ozwell AI Integration for MCP Client
 class OzwellIntegration {
     constructor() {
-        this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk'; // In production, this should be securely managed
+        this.apiKey = 'ADD your API key here'; // In production, this should be securely managed
         this.baseUrl = 'https://ai.bluehive.com/api/v1/completion'; // Adjust to actual Ozwell API endpoint
         this.model = 'ozwell-medical-v1'; // Adjust to actual model name
         
