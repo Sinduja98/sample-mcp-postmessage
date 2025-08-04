@@ -1,120 +1,34 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-
-// Medical MCP Server implementation
-export class MedicalMCPServer {
+// Medical MCP Server - Mock implementation for local development
+class MedicalMCPServer {
     constructor() {
-        const medicationSchema = z.object({
-            name: z.string().describe("Name of the medication"),
-            frequency: z.string().describe("How often to take the medication"),
-            indication: z.string().describe("Reason for prescribing")
-        });
-
-        const allergySchema = z.object({
-            allergen: z.string().describe("The substance the patient is allergic to"),
-            reaction: z.string().describe("The type of reaction"),
-            severity: z.enum(["Mild", "Moderate", "Severe"]).describe("Severity of the allergic reaction")
-        });
-
-        this.server = new McpServer({
-            name: "medical-server",
-            version: "1.0.0",
-            capabilities: {
-                resources: {},
-                tools: {
-                    addMedication: {
-                        description: "Add a new medication to patient records",
-                        parameters: medicationSchema,
-                        handler: async (params, context) => {
-                            // Validate against context (allergies, interactions)
-                            if (context?.allergies) {
-                                const allergyMatch = context.allergies.find(a => 
-                                    params.name.toLowerCase().includes(a.allergen.toLowerCase())
-                                );
-                                if (allergyMatch) {
-                                    throw new Error(`Patient is allergic to ${allergyMatch.allergen}`);
-                                }
-                            }
-                            
-                            return window.parent.postMessage({
-                                type: 'mcp-tool-call',
-                                tool: 'addMedication',
-                                params
-                            }, '*');
-                        }
-                    },
-                    discontinueMedication: {
-                        description: "Discontinue an existing medication",
-                        parameters: z.string().describe("Name or ID of medication to discontinue"),
-                        handler: async (params, context) => {
-                            // Validate medication exists
-                            if (context?.medications) {
-                                const exists = context.medications.some(m => 
-                                    m.name.toLowerCase() === params.toLowerCase() || m.id === params
-                                );
-                                if (!exists) {
-                                    throw new Error(`Medication ${params} not found in current medications`);
-                                }
-                            }
-                            
-                            return window.parent.postMessage({
-                                type: 'mcp-tool-call',
-                                tool: 'discontinueMedication',
-                                params
-                            }, '*');
-                        }
-                    },
-                    addAllergy: {
-                        description: "Add a new allergy to patient records",
-                        parameters: allergySchema,
-                        handler: async (params) => {
-                            return window.parent.postMessage({
-                                type: 'mcp-tool-call',
-                                tool: 'addAllergy',
-                                params
-                            }, '*');
-                        }
-                    },
-                    getContext: {
-                        description: "Get current patient context",
-                        parameters: z.object({}),
-                        handler: async () => {
-                            return window.parent.postMessage({
-                                type: 'mcp-tool-call',
-                                tool: 'getContext',
-                                params: {}
-                            }, '*');
-                        }
-                    }
-                }
-            }
-        });
+        this.initialized = false;
     }
 
     async initialize() {
-        // Set up message listener for tool responses
-        window.addEventListener('message', this.handleMessage.bind(this));
+        // Mock initialization - in a real implementation this would
+        // connect to actual MCP server endpoints
+        console.log('Initializing Medical MCP Server (mock)...');
         
-        await this.server.initialize();
-
-        // Register with parent
-        window.parent.postMessage({
-            type: 'mcp-register',
-            capabilities: Object.keys(this.server.capabilities.tools)
-        }, '*');
-
+        // Simulate async initialization
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        this.initialized = true;
+        console.log('Medical MCP Server initialized successfully');
+        
         return this;
     }
 
-    handleMessage(event) {
-        const { data } = event;
-        if (data.type === 'mcp-tool-response') {
-            // Handle tool response through MCP server
-            this.server.handleToolResponse(data.requestId, data.result);
-        }
+    isInitialized() {
+        return this.initialized;
     }
 
-    async executeTool(toolName, parameters, context = null) {
-        return await this.server.executeTool(toolName, parameters, context);
+    // Mock method for compatibility
+    async getContext() {
+        console.log('MedicalMCPServer.getContext() - delegating to parent communication');
+        // This is handled via postMessage to parent, so just return mock success
+        return { success: true, message: 'Using parent communication' };
     }
 }
+
+// Export for use in MCP client
+window.MedicalMCPServer = MedicalMCPServer;

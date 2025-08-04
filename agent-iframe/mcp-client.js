@@ -1,53 +1,15 @@
-import { OzwellIntegration } from './ozwell-integration.js';
-import { MedicalMCPServer } from './medical-mcp-server.js';
-
 // MCP Client - Handles chat interface and tool execution
-export class MCPClient {
+class MCPClient {
     constructor() {
-        this.toolResponseCallbacks = new Map();
-        this.nextRequestId = 1;
         this.ozwell = new OzwellIntegration();
         this.chatHistory = [];
         this.requestCounter = 0;
         this.mcpServer = null;
         this.context = null;
-    }
-
-    async initialize() {
-        window.addEventListener('message', this.handleMessage.bind(this));
+        
         this.initializeUI();
         this.initializeMCP();
-        return this;
-    }
-
-    handleMessage(event) {
-        const { data } = event;
-        
-        if (data.type === 'mcp-tool-call') {
-            // Handle incoming tool calls
-            this.handleToolCall(data)
-                .then(result => {
-                    event.source.postMessage({
-                        type: 'mcp-tool-response',
-                        requestId: data.requestId,
-                        result
-                    }, '*');
-                })
-                .catch(error => {
-                    event.source.postMessage({
-                        type: 'mcp-tool-response',
-                        requestId: data.requestId,
-                        error: error.message
-                    }, '*');
-                });
-        } else if (data.type === 'mcp-context') {
-            this.patientContext = data.context;
-            this.addSystemMessage('Patient context loaded successfully');
-        } else if (data.type === 'mcp-response') {
-            this.handleToolResponse(data);
-        } else if (data.type === 'run-simulation') {
-            this.runSimulation(data.tasks);
-        }
+        this.setupMessageListener();
     }
 
     initializeUI() {
@@ -58,6 +20,19 @@ export class MCPClient {
         this.sendButton.addEventListener('click', () => this.sendMessage());
         this.userInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
+        });
+    }
+
+    setupMessageListener() {
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'mcp-context') {
+                this.patientContext = event.data.context;
+                this.addSystemMessage('Patient context loaded successfully');
+            } else if (event.data.type === 'mcp-response') {
+                this.handleToolResponse(event.data);
+            } else if (event.data.type === 'run-simulation') {
+                this.runSimulation(event.data.tasks);
+            }
         });
     }
 
@@ -262,56 +237,6 @@ export class MCPClient {
             this.updateStatus('error', 'Failed to connect to medical system');
             this.addSystemMessage('❌ Failed to connect to medical system: ' + error.message);
         }
-    }
-
-    async handleToolCall(data) {
-        const { tool, params } = data;
-        
-        // Implement your tool handlers here
-        switch (tool) {
-            case 'addMedication':
-                return await this.addMedication(params);
-            case 'discontinueMedication':
-                return await this.discontinueMedication(params);
-            case 'addAllergy':
-                return await this.addAllergy(params);
-            case 'getContext':
-                return await this.getContext();
-            default:
-                throw new Error(`Unknown tool: ${tool}`);
-        }
-    }
-
-    // Tool handler implementations
-    async addMedication(params) {
-        // Implement medication addition logic
-        console.log('Adding medication:', params);
-        return { success: true, medicationId: Date.now() };
-    }
-
-    async discontinueMedication(params) {
-        // Implement medication discontinuation logic
-        console.log('Discontinuing medication:', params);
-        return { success: true };
-    }
-
-    async addAllergy(params) {
-        // Implement allergy addition logic
-        console.log('Adding allergy:', params);
-        return { success: true, allergyId: Date.now() };
-    }
-
-    async getContext() {
-        // Return current patient context
-        return {
-            medications: [
-                // Sample data - replace with actual patient data
-                { id: '1', name: 'Aspirin', frequency: 'daily', indication: 'pain' }
-            ],
-            allergies: [
-                { allergen: 'Penicillin', reaction: 'Rash', severity: 'Moderate' }
-            ]
-        };
     }
 }
 

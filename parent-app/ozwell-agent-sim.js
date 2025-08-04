@@ -3,7 +3,7 @@ class OzwellAgentSimulator {
     constructor() {
         this.iframe = null;
         this.isAgentActive = false;
-        this.agentUrl = 'http://localhost:8081/'; // Adjust as needed
+        this.agentUrl = 'http://localhost:5173/agent-iframe/'; // Adjust as needed
         
         this.initializeUI();
         this.setupMessageListener();
@@ -22,6 +22,7 @@ class OzwellAgentSimulator {
 
     setupMessageListener() {
         window.addEventListener('message', (event) => {
+            console.log("----------",event);
             // Security check - in production, validate event.origin
             if (event.data.type === 'mcp-request') {
                 this.handleMCPRequest(event.data);
