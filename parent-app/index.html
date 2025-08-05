@@ -3,30 +3,874 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Copilot - Parent App</title>
-    <link rel="stylesheet" href="styles.css">
+    <!-- <title>Ozwell Medical AI - Parent Window</title> -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .controls button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .controls button:hover {
+            background: #0056b3;
+        }
+        
+        #contextDisplay {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        
+        #contextJson {
+            background: #ffffff;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        #logContainer {
+            height: 300px;
+            overflow-y: auto;
+            background: #000;
+            color: #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            white-space: pre-wrap;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .config-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #fafafa;
+        }
+        
+        .config-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .config-section input {
+            width: 300px;
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .config-section button {
+            padding: 8px 16px;
+            margin: 5px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .config-section button:hover {
+            background: #218838;
+        }
+        
+        .config-section button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1>Medical Practice Management System</h1>
+        <h1>Ozwell Medical AI - Integration Demo</h1>
+        
+        <div class="status-bar">
+            <span>🏥 Medical System Ready</span>
+            <span id="agentStatus">Agent: Offline</span>
+        </div>
         
         <div class="controls">
-            <button id="runSimulation" class="btn btn-primary">Run Simulation</button>
-            <button id="showContext" class="btn btn-secondary">Show Current Context</button>
+            <h3>Medical AI Agent Controls</h3>
+            <button id="runSimulation">🚀 Launch AI Agent</button>
+            <button id="showContext">📋 Show Patient Context</button>
+            <button onclick="window.ozwellAgent.closeAgent()">❌ Close Agent</button>
         </div>
-
-        <div id="contextDisplay" class="context-display" style="display: none;">
-            <h3>Current Medical Context</h3>
+        
+        <!-- Ozwell configuration will be dynamically added here -->
+        
+        <div id="contextDisplay">
+            <h3>Current Patient Context</h3>
+            <button onclick="document.getElementById('contextDisplay').style.display='none'" style="float: right;">Close</button>
             <pre id="contextJson"></pre>
         </div>
-
-        <div class="status-log">
-            <h3>System Log</h3>
+        
+        <div>
+            <h3>System Logs</h3>
             <div id="logContainer"></div>
         </div>
     </div>
 
-    <script src="medical-data.js"></script>
-    <script src="ozwell-agent-sim.js"></script>
+    <!-- Include all the JavaScript files -->
+    <!-- Medical Data Manager -->
+    <script>
+        // Medical data management and MCP server functions
+        class MedicalDataManager {
+            constructor() {
+                this.patientData = {
+                    patientId: "PAT-12345",
+                    name: "John Doe",
+                    age: 65,
+                    medications: [
+                        {
+                            id: "med-1",
+                            name: "Lisinopril",
+                            dose: "10mg",
+                            frequency: "once daily",
+                            indication: "Hypertension",
+                            startDate: "2024-01-15"
+                        },
+                        {
+                            id: "med-2",
+                            name: "Metformin",
+                            dose: "500mg",
+                            frequency: "twice daily",
+                            indication: "Type 2 Diabetes",
+                            startDate: "2023-11-20"
+                        }
+                    ],
+                    allergies: [
+                        {
+                            id: "allergy-1",
+                            allergen: "Penicillin",
+                            reaction: "Rash",
+                            severity: "Moderate"
+                        }
+                    ],
+                    conditions: [
+                        "Hypertension",
+                        "Type 2 Diabetes",
+                        "Hyperlipidemia"
+                    ]
+                };
+            }
+
+            // MCP Server Function: Get Context
+            getContext() {
+                this.log("getContext() called");
+                return {
+                    success: true,
+                    data: JSON.parse(JSON.stringify(this.patientData)) // Deep copy
+                };
+            }
+
+            // MCP Server Function: Add Medication
+            addMedication(medication) {
+                this.log(`addMedication() called with:`, medication);
+                
+                const newMed = {
+                    id: `med-${Date.now()}`,
+                    name: medication.name,
+                    dose: medication.dose,
+                    frequency: medication.frequency,
+                    indication: medication.indication || "Not specified",
+                    startDate: new Date().toISOString().split('T')[0]
+                };
+
+                this.patientData.medications.push(newMed);
+                
+                return {
+                    success: true,
+                    data: newMed,
+                    message: `Successfully added ${medication.name} to medication list`
+                };
+            }
+
+            // MCP Server Function: Discontinue Medication
+            discontinueMedication(medId) {
+                this.log(`discontinueMedication() called with ID: ${medId}`);
+                
+                const medIndex = this.patientData.medications.findIndex(med => 
+                    med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
+                );
+
+                if (medIndex === -1) {
+                    return {
+                        success: false,
+                        error: `Medication with ID/name '${medId}' not found`
+                    };
+                }
+
+                const removedMed = this.patientData.medications.splice(medIndex, 1)[0];
+                
+                return {
+                    success: true,
+                    data: removedMed,
+                    message: `Successfully discontinued ${removedMed.name}`
+                };
+            }
+
+            // MCP Server Function: Edit Medication
+            editMedication(medId, updates) {
+                this.log(`editMedication() called with ID: ${medId}`, updates);
+                
+                const med = this.patientData.medications.find(med => 
+                    med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
+                );
+
+                if (!med) {
+                    return {
+                        success: false,
+                        error: `Medication with ID/name '${medId}' not found`
+                    };
+                }
+
+                Object.assign(med, updates);
+                
+                return {
+                    success: true,
+                    data: med,
+                    message: `Successfully updated ${med.name}`
+                };
+            }
+
+            // MCP Server Function: Delete Medication
+            deleteMedication(medId) {
+                return this.discontinueMedication(medId); // Same functionality
+            }
+
+            // MCP Server Function: Add Allergy
+            addAllergy(allergy) {
+                this.log(`addAllergy() called with:`, allergy);
+                
+                const newAllergy = {
+                    id: `allergy-${Date.now()}`,
+                    allergen: allergy.allergen,
+                    reaction: allergy.reaction || "Unknown reaction",
+                    severity: allergy.severity || "Unknown"
+                };
+
+                this.patientData.allergies.push(newAllergy);
+                
+                return {
+                    success: true,
+                    data: newAllergy,
+                    message: `Successfully added allergy to ${allergy.allergen}`
+                };
+            }
+
+            // Utility function for logging
+            log(message, data = null) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logElement = document.getElementById('logContainer');
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                
+                let logText = `[${timestamp}] ${message}`;
+                if (data) {
+                    logText += `\n${JSON.stringify(data, null, 2)}`;
+                }
+                
+                logEntry.textContent = logText;
+                logElement.appendChild(logEntry);
+                logElement.scrollTop = logElement.scrollHeight;
+                
+                console.log(message, data);
+            }
+        }
+
+        // Global instance
+        window.medicalDataManager = new MedicalDataManager();
+
+        // Expose MCP server functions globally
+        window.getContext = () => window.medicalDataManager.getContext();
+        window.addMedication = (med) => window.medicalDataManager.addMedication(med);
+        window.discontinueMedication = (medId) => window.medicalDataManager.discontinueMedication(medId);
+        window.editMedication = (medId, updates) => window.medicalDataManager.editMedication(medId, updates);
+        window.deleteMedication = (medId) => window.medicalDataManager.deleteMedication(medId);
+        window.addAllergy = (allergy) => window.medicalDataManager.addAllergy(allergy);
+    </script>
+
+    <!-- Ozwell API Handler -->
+    <script>
+        // Parent Window - Ozwell API Handler
+        class OzwellAPIHandler {
+            constructor() {
+                this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk';
+                this.baseUrl = 'https://ai.bluehive.com/api/v1/completion';
+                this.defaultModel = 'ozwell-medical-v1';
+            }
+
+            handleConfiguration(config) {
+                if (config.apiKey) this.apiKey = config.apiKey;
+                if (config.baseUrl) this.baseUrl = config.baseUrl;
+                if (config.model) this.defaultModel = config.model;
+                
+                console.log('Ozwell configuration updated:', { 
+                    hasApiKey: !!this.apiKey, 
+                    baseUrl: this.baseUrl, 
+                    model: this.defaultModel 
+                });
+            }
+
+            async handleOzwellRequest(event) {
+                const { requestId, payload } = event.data;
+                const source = event.source;
+
+                try {
+                    if (payload.stream) {
+                        await this.handleStreamingRequest(requestId, payload, source);
+                    } else {
+                        await this.handleNonStreamingRequest(requestId, payload, source);
+                    }
+                } catch (error) {
+                    console.error('Error handling Ozwell request:', error);
+                    source.postMessage({
+                        type: 'ozwell-error',
+                        requestId: requestId,
+                        error: error.message
+                    }, '*');
+                }
+            }
+
+            async handleNonStreamingRequest(requestId, payload, source) {
+                const requestBody = {
+                    model: payload.model || this.defaultModel,
+                    messages: payload.messages,
+                    temperature: payload.temperature || 0.7,
+                    max_tokens: payload.max_tokens || 1000
+                };
+
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`,
+                };
+
+                try {
+                    const response = await fetch(this.baseUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    source.postMessage({
+                        type: 'ozwell-response',
+                        requestId: requestId,
+                        success: true,
+                        response: data
+                    }, '*');
+
+                } catch (error) {
+                    console.error('Ozwell API error:', error);
+                    source.postMessage({
+                        type: 'ozwell-response',
+                        requestId: requestId,
+                        success: false,
+                        error: error.message
+                    }, '*');
+                }
+            }
+
+            async handleStreamingRequest(requestId, payload, source) {
+                const requestBody = {
+                    model: payload.model || this.defaultModel,
+                    messages: payload.messages,
+                    temperature: payload.temperature || 0.7,
+                    max_tokens: payload.max_tokens || 1000,
+                    stream: true
+                };
+
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`,
+                };
+
+                try {
+                    const response = await fetch(this.baseUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                    }
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            const chunk = decoder.decode(value, { stream: true });
+                            const lines = chunk.split('\n');
+
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data === '[DONE]') {
+                                        source.postMessage({
+                                            type: 'ozwell-stream-end',
+                                            requestId: requestId
+                                        }, '*');
+                                        return;
+                                    }
+
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        source.postMessage({
+                                            type: 'ozwell-stream-chunk',
+                                            requestId: requestId,
+                                            chunk: parsed
+                                        }, '*');
+                                    } catch (e) {
+                                        console.warn('Failed to parse streaming chunk:', e);
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        reader.releaseLock();
+                    }
+
+                } catch (error) {
+                    console.error('Ozwell streaming API error:', error);
+                    source.postMessage({
+                        type: 'ozwell-error',
+                        requestId: requestId,
+                        error: error.message
+                    }, '*');
+                }
+            }
+
+            async testConnection() {
+                if (!this.apiKey) {
+                    throw new Error('API key not configured');
+                }
+
+                const testPayload = {
+                    model: this.defaultModel,
+                    messages: [{ role: 'user', content: 'Hello' }],
+                    max_tokens: 10
+                };
+
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`,
+                };
+
+                const response = await fetch(this.baseUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(testPayload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Connection test failed: ${response.status} ${response.statusText}`);
+                }
+
+                return await response.json();
+            }
+        }
+    </script>
+
+    <!-- Enhanced Ozwell Agent Simulator -->
+    <script>
+        class OzwellAgentSimulator {
+            constructor() {
+                this.iframe = null;
+                this.isAgentActive = false;
+                this.agentUrl = 'http://localhost:5173/agent-iframe/'; // Adjust as needed
+                
+                // Initialize Ozwell API handler
+                this.ozwellHandler = new OzwellAPIHandler();
+                
+                this.initializeUI();
+                this.setupMessageListener();
+                this.addOzwellConfiguration();
+            }
+
+            initializeUI() {
+                // Add event listeners to existing buttons
+                document.getElementById('runSimulation').addEventListener('click', () => {
+                    this.runSimulation();
+                });
+
+                document.getElementById('showContext').addEventListener('click', () => {
+                    this.showCurrentContext();
+                });
+            }
+
+            addOzwellConfiguration() {
+                // Add Ozwell configuration section to the UI
+                const configSection = document.createElement('div');
+                configSection.className = 'config-section';
+                configSection.innerHTML = `
+                    <h3>🔧 Ozwell API Configuration</h3>
+                    <div style="margin: 10px 0;">
+                        <label style="display: inline-block; width: 80px;">API Key:</label>
+                        <input type="password" id="ozwellApiKey" placeholder="Enter Ozwell API Key">
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <label style="display: inline-block; width: 80px;">API URL:</label>
+                        <input type="text" id="ozwellApiUrl" placeholder="https://ai.bluehive.com/api/v1/completion">
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <label style="display: inline-block; width: 80px;">Model:</label>
+                        <input type="text" id="ozwellModel" placeholder="ozwell-medical-v1">
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <button id="saveOzwellConfig">💾 Save Configuration</button>
+                        <button id="testOzwellConnection">🔍 Test Connection</button>
+                        <span id="ozwellStatus" style="margin-left: 10px; font-weight: bold;"></span>
+                    </div>
+                `;
+                
+                // Insert after the existing controls
+                const existingControls = document.querySelector('.controls');
+                existingControls.insertAdjacentElement('afterend', configSection);
+
+                // Add event listeners for configuration
+                document.getElementById('saveOzwellConfig').addEventListener('click', () => {
+                    this.saveOzwellConfiguration();
+                });
+
+                document.getElementById('testOzwellConnection').addEventListener('click', () => {
+                    this.testOzwellConnection();
+                });
+
+                // Load saved configuration
+                this.loadSavedConfiguration();
+            }
+
+            loadSavedConfiguration() {
+                const apiKey = localStorage.getItem('ozwell_api_key') || '';
+                const apiUrl = localStorage.getItem('ozwell_api_url') || 'https://ai.bluehive.com/api/v1/completion';
+                const model = localStorage.getItem('ozwell_model') || 'ozwell-medical-v1';
+
+                document.getElementById('ozwellApiKey').value = apiKey;
+                document.getElementById('ozwellApiUrl').value = apiUrl;
+                document.getElementById('ozwellModel').value = model;
+
+                if (apiKey) {
+                    this.ozwellHandler.handleConfiguration({
+                        apiKey: apiKey,
+                        baseUrl: apiUrl,
+                        model: model
+                    });
+                    this.updateOzwellStatus('Configuration loaded', 'success');
+                }
+            }
+
+            saveOzwellConfiguration() {
+                const apiKey = document.getElementById('ozwellApiKey').value.trim();
+                const apiUrl = document.getElementById('ozwellApiUrl').value.trim();
+                const model = document.getElementById('ozwellModel').value.trim();
+
+                if (!apiKey) {
+                    this.updateOzwellStatus('Please enter an API key', 'error');
+                    return;
+                }
+
+                // Save to localStorage
+                localStorage.setItem('ozwell_api_key', apiKey);
+                localStorage.setItem('ozwell_api_url', apiUrl);
+                localStorage.setItem('ozwell_model', model);
+
+                // Configure the handler
+                this.ozwellHandler.handleConfiguration({
+                    apiKey: apiKey,
+                    baseUrl: apiUrl || 'https://ai.bluehive.com/api/v1/completion',
+                    model: model || 'ozwell-medical-v1'
+                });
+
+                this.updateOzwellStatus('Configuration saved successfully', 'success');
+                medicalDataManager.log('Ozwell configuration saved', { apiUrl, model, hasApiKey: !!apiKey });
+            }
+
+            async testOzwellConnection() {
+                try {
+                    this.updateOzwellStatus('Testing connection...', 'info');
+                    
+                    const result = await this.ozwellHandler.testConnection();
+                    this.updateOzwellStatus('Connection successful!', 'success');
+                    medicalDataManager.log('Ozwell connection test successful', result);
+                } catch (error) {
+                    this.updateOzwellStatus(`Connection failed: ${error.message}`, 'error');
+                    medicalDataManager.log('Ozwell connection test failed', { error: error.message });
+                }
+            }
+
+            updateOzwellStatus(message, type = 'info') {
+                const statusElement = document.getElementById('ozwellStatus');
+                statusElement.textContent = message;
+                
+                // Update status colors
+                switch (type) {
+                    case 'success':
+                        statusElement.style.color = '#28a745';
+                        break;
+                    case 'error':
+                        statusElement.style.color = '#dc3545';
+                        break;
+                    case 'info':
+                        statusElement.style.color = '#17a2b8';
+                        break;
+                    default:
+                        statusElement.style.color = '#333';
+                }
+            }
+
+            setupMessageListener() {
+                window.addEventListener('message', async (event) => {
+                    console.log("Received message:", event.data);
+                    
+                    // Handle MCP requests (existing functionality)
+                    if (event.data.type === 'mcp-request') {
+                        await this.handleMCPRequest(event.data);
+                    }
+                    
+                    // Handle Ozwell API requests (new functionality)
+                    else if (event.data.type === 'ozwell-request') {
+                        await this.ozwellHandler.handleOzwellRequest(event);
+                    }
+                    
+                    // Handle Ozwell configuration (new functionality)
+                    else if (event.data.type === 'ozwell-config') {
+                        this.ozwellHandler.handleConfiguration(event.data.config);
+                    }
+                });
+            }
+
+            createAgentIframe() {
+                if (this.iframe) {
+                    return; // Already exists
+                }
+
+                medicalDataManager.log("Creating agent iframe...");
+
+                // Create iframe element
+                this.iframe = document.createElement('iframe');
+                this.iframe.src = this.agentUrl;
+                this.iframe.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    width: 420px;
+                    height: 650px;
+                    border: 2px solid #007bff;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                    z-index: 1000;
+                    background: white;
+                `;
+
+                // Add header with title and close button
+                const header = document.createElement('div');
+                header.style.cssText = `
+                    position: fixed;
+                    top: -22px;
+                    right: 20px;
+                    width: 420px;
+                    height: 40px;
+                    background: linear-gradient(135deg, #007bff, #0056b3);
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 0 15px;
+                    border-radius: 8px 8px 0 0;
+                    font-weight: bold;
+                    z-index: 1001;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                `;
+                // header.innerHTML = `
+                //     <span>🏥 Ozwell Medical AI</span>
+                //     <button onclick="window.ozwellAgent.closeAgent()" style="
+                //         background: rgba(255,255,255,0.2);
+                //         border: none;
+                //         color: white;
+                //         font-size: 18px;
+                //         cursor: pointer;
+                //         padding: 4px 8px;
+                //         border-radius: 4px;
+                //         transition: background 0.2s;
+                //     " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
+                //        onmouseout="this.style.background='rgba(255,255,255,0.2)'">×</button>
+                // `;
+
+                document.body.appendChild(header);
+                document.body.appendChild(this.iframe);
+
+                // Store reference to header for cleanup
+                this.iframe._header = header;
+
+                // Update status
+                document.getElementById('agentStatus').textContent = 'Agent: Loading...';
+
+                // Wait for iframe to load, then initialize
+                this.iframe.onload = () => {
+                    this.isAgentActive = true;
+                    document.getElementById('agentStatus').textContent = 'Agent: Active';
+                    this.sendInitialContext();
+                };
+            }
+
+            closeAgent() {
+                if (this.iframe) {
+                    if (this.iframe._header) {
+                        this.iframe._header.remove();
+                    }
+                    this.iframe.remove();
+                    this.iframe = null;
+                    this.isAgentActive = false;
+                    document.getElementById('agentStatus').textContent = 'Agent: Offline';
+                    medicalDataManager.log("Agent iframe closed");
+                }
+            }
+
+            sendInitialContext() {
+                if (!this.iframe) return;
+
+                const context = getContext();
+                this.iframe.contentWindow.postMessage({
+                    type: 'mcp-context',
+                    context: context
+                }, '*');
+
+                medicalDataManager.log("Initial context sent to agent");
+            }
+
+            async handleMCPRequest(data) {
+                medicalDataManager.log(`Received MCP request: ${data.method}`, data.params);
+
+                let result;
+                try {
+                    switch (data.method) {
+                        case 'getContext':
+                            result = getContext();
+                            break;
+                        case 'addMedication':
+                            result = addMedication(data.params);
+                            break;
+                        case 'discontinueMedication':
+                            result = discontinueMedication(data.params.medId || data.params);
+                            break;
+                        case 'editMedication':
+                            result = editMedication(data.params.medId, data.params.updates);
+                            break;
+                        case 'deleteMedication':
+                            result = deleteMedication(data.params.medId || data.params);
+                            break;
+                        case 'addAllergy':
+                            result = addAllergy(data.params);
+                            break;
+                        default:
+                            result = {
+                                success: false,
+                                error: `Unknown method: ${data.method}`
+                            };
+                    }
+                } catch (error) {
+                    result = {
+                        success: false,
+                        error: error.message
+                    };
+                }
+
+                // Send result back to iframe
+                if (this.iframe) {
+                    this.iframe.contentWindow.postMessage({
+                        type: 'mcp-response',
+                        requestId: data.requestId,
+                        result: result
+                    }, '*');
+                }
+            }
+
+            runSimulation() {
+                medicalDataManager.log("Starting Ozwell AI agent...");
+                
+                // Create iframe if it doesn't exist
+                if (!this.iframe) {
+                    this.createAgentIframe();
+                } else {
+                    medicalDataManager.log("Agent already running");
+                }
+            }
+
+            showCurrentContext() {
+                const context = getContext();
+                const contextDisplay = document.getElementById('contextDisplay');
+                const contextJson = document.getElementById('contextJson');
+                
+                contextJson.textContent = JSON.stringify(context.data, null, 2);
+                contextDisplay.style.display = 'block';
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.ozwellAgent = new OzwellAgentSimulator();
+            medicalDataManager.log("Ozwell Medical AI System initialized");
+        });
+    </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Ozwell AI Integration for MCP Client
+// Ozwell AI Integration for MCP Client - Updated for Real API
 class OzwellIntegration {
     constructor() {
         this.apiKey = 'ADD your API key here'; // In production, this should be securely managed
@@ -10,10 +10,6 @@ class OzwellIntegration {
 AVAILABLE TOOLS:
 - getContext(): Retrieve current patient medical information
 - addMedication(medication): Add a new medication (requires: name, dose, frequency, indication)
-- discontinueMedication(medId): Discontinue a medication by ID or name
-- editMedication(medId, updates): Edit medication details
-- deleteMedication(medId): Delete a medication
-- addAllergy(allergy): Add a new allergy (requires: allergen, reaction, severity)
 
 IMPORTANT GUIDELINES:
 - Always check current patient context before making changes
@@ -33,31 +29,388 @@ PARAMS: {"name": "Amoxicillin", "dose": "500mg", "frequency": "twice daily", "in
     }
 
     async generateResponse(messages, onChunk = null) {
+        // If we've determined that simulation mode should be used, skip API call
+        if (this.useSimulationMode) {
+            console.log('Using simulation mode (API previously failed)');
+            return await this.simulateOzwellAPI(messages);
+        }
+
         try {
-            // Simulate Ozwell API call - replace with actual API integration
-            const response = await this.simulateOzwellAPI(messages);
-            
-            if (onChunk) {
-                // Simulate streaming
-                const chunks = response.split(' ');
-                for (let i = 0; i < chunks.length; i++) {
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                    onChunk(chunks[i] + ' ');
-                }
-            }
-            
+            // Call real Ozwell API
+            const response = await this.callOzwellAPI(messages, onChunk);
             return response;
         } catch (error) {
             console.error('Ozwell API Error:', error);
-            throw error;
+            
+            // If this is a 400 error, it likely means the API endpoint is incorrect
+            // Set simulation mode for future calls to avoid repeated failures
+            if (error.message.includes('400')) {
+                console.log('Setting simulation mode due to 400 error - API endpoint likely incorrect');
+                this.useSimulationMode = true;
+            }
+            
+            // Fallback to simulated response if API fails
+            console.log('Falling back to simulated response...');
+            return await this.simulateOzwellAPI(messages);
         }
     }
 
+    async callOzwellAPI(messages, onChunk = null) {
+        // Prepare the conversation history for Ozwell
+        const conversationMessages = [
+            {
+                role: 'system',
+                content: this.systemPrompt
+            },
+            ...messages
+        ];
+
+        // Convert messages to a single prompt string for Ozwell API
+        const prompt = this.convertMessagesToPrompt(conversationMessages);
+
+        // Ozwell API expects a "prompt" field instead of "messages"
+        const requestBody = {
+            // model: this.model,
+            prompt: prompt,
+            temperature: 0.7,
+            max_tokens: 1000,
+            stream: !!onChunk // Enable streaming if callback provided
+        };
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json',
+            // Add any other required headers for Ozwell API
+        };
+
+        if (onChunk) {
+            // Handle streaming response
+            return await this.handleStreamingResponse(requestBody, headers, onChunk);
+        } else {
+            // Handle non-streaming response
+            return await this.handleNonStreamingResponse(requestBody, headers);
+        }
+    }
+
+    async handleStreamingResponse(requestBody, headers, onChunk) {
+        console.log('Making streaming API request to:', this.baseUrl);
+        console.log('Request body:', JSON.stringify(requestBody, null, 2));
+        console.log('Headers:', headers);
+        
+        const response = await fetch(this.baseUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+        });
+
+        console.log('Streaming response status:', response.status);
+        console.log('Streaming response headers:', Object.fromEntries(response.headers.entries()));
+
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                console.log('Raw chunk received:', JSON.stringify(chunk));
+                
+                buffer += chunk;
+                const lines = buffer.split('\n');
+                
+                // Keep the last line in buffer in case it's incomplete
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) continue;
+                    
+                    console.log('Processing line:', JSON.stringify(trimmedLine));
+                    
+                    let content = '';
+                    
+                    // Handle Server-Sent Events format
+                    if (trimmedLine.startsWith('data: ')) {
+                        const data = trimmedLine.slice(6);
+                        if (data === '[DONE]') {
+                            console.log('Received [DONE] signal');
+                            continue;
+                        }
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            content = this.extractContentFromStreamChunk(parsed);
+                        } catch (e) {
+                            console.warn('Failed to parse SSE JSON chunk:', e, 'Data:', data);
+                            // Treat as plain text if not JSON
+                            content = data;
+                        }
+                    }
+                    // Handle raw JSON streaming (one JSON object per line)
+                    else if (trimmedLine.startsWith('{')) {
+                        try {
+                            const parsed = JSON.parse(trimmedLine);
+                            content = this.extractContentFromStreamChunk(parsed);
+                        } catch (e) {
+                            console.warn('Failed to parse JSON line:', e, 'Line:', trimmedLine);
+                        }
+                    }
+                    // Handle plain text streaming
+                    else {
+                        console.log('Treating as plain text chunk:', trimmedLine);
+                        content = trimmedLine;
+                    }
+                    
+                    if (content) {
+                        console.log('Extracted content:', JSON.stringify(content));
+                        fullResponse += content;
+                        onChunk(content);
+                    }
+                }
+            }
+            
+            // Process any remaining content in buffer
+            if (buffer.trim()) {
+                console.log('Processing remaining buffer:', JSON.stringify(buffer));
+                let content = '';
+                
+                if (buffer.trim().startsWith('{')) {
+                    try {
+                        const parsed = JSON.parse(buffer.trim());
+                        content = this.extractContentFromStreamChunk(parsed);
+                    } catch (e) {
+                        console.warn('Failed to parse final buffer JSON:', e);
+                        content = buffer.trim();
+                    }
+                } else {
+                    content = buffer.trim();
+                }
+                
+                if (content) {
+                    console.log('Final buffer content:', JSON.stringify(content));
+                    fullResponse += content;
+                    onChunk(content);
+                }
+            }
+            
+        } finally {
+            reader.releaseLock();
+        }
+
+        console.log('Final streaming response:', JSON.stringify(fullResponse));
+        return fullResponse;
+    }
+
+    extractContentFromStreamChunk(parsed) {
+        // Handle different streaming response formats
+        let content = '';
+        
+        console.log('Extracting content from chunk:', JSON.stringify(parsed));
+        
+     if (parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content) {
+            // OpenAI-style streaming
+            content = parsed.choices[0].message.content;
+            console.log('Using Ozwell-style delta content:', content);
+        } else if (parsed.choices && parsed.choices[0] && parsed.choices[0].text) {
+            // Completion-style streaming
+            content = parsed.choices[0].text;
+            console.log('Using completion-style text:', content);
+        } else if (parsed.text) {
+            // Simple text streaming
+            content = parsed.text;
+            console.log('Using simple text:', content);
+        } else if (parsed.token) {
+            // Token-based streaming
+            content = parsed.token;
+            console.log('Using token:', content);
+        } else if (parsed.content) {
+            // Content field
+            content = parsed.content;
+            console.log('Using content field:', content);
+        } else if (parsed.response) {
+            // Response field
+            content = parsed.response;
+            console.log('Using response field:', content);
+        } else if (parsed.completion) {
+            // Completion field
+            content = parsed.completion;
+            console.log('Using completion field:', content);
+        } else if (typeof parsed === 'string') {
+            // Direct string
+            content = parsed;
+            console.log('Using direct string:', content);
+        } else {
+            // Look for any string field that might contain the response
+            console.log('Searching for content in all fields:', Object.keys(parsed));
+            for (const [key, value] of Object.entries(parsed)) {
+                if (typeof value === 'string' && value.trim().length > 0) {
+                    console.log(`Found potential content in ${key}:`, value);
+                    if (!content) content = value;
+                }
+            }
+        }
+        
+        return content;
+    }
+
+    async handleNonStreamingResponse(requestBody, headers) {
+        console.log('Making API request to:', this.baseUrl);
+        console.log('Request body:', JSON.stringify(requestBody, null, 2));
+        console.log('Headers:', headers);
+        
+        const response = await fetch(this.baseUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+        });
+
+        console.log('Response status:', response.status);
+        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+        if (!response.ok) {
+            // Try to get more details about the error
+            let errorText = '';
+            try {
+                errorText = await response.text();
+                console.log('Error response body:', errorText);
+            } catch (e) {
+                console.log('Could not read error response body');
+            }
+            throw new Error(`API request failed: ${response.status} ${response.statusText}. ${errorText ? 'Details: ' + errorText : ''}`);
+        }
+
+        const data = await response.json();
+        console.log('Full API response structure:', JSON.stringify(data, null, 2));
+        
+        // Handle different response formats that Ozwell might use
+        let responseText = '';
+        
+        if (data.choices && Array.isArray(data.choices) && data.choices.length > 0) {
+            const choice = data.choices[0];
+            console.log('First choice structure:', JSON.stringify(choice, null, 2));
+            
+            if (choice.message && choice.message.content) {
+                // OpenAI-style response
+                responseText = choice.message.content;
+                console.log('Using message.content:', responseText);
+            } else if (choice.text) {
+                // Completion-style response
+                responseText = choice.text;
+                console.log('Using choice.text:', responseText);
+            }
+        } else if (data.text) {
+            // Simple text response
+            responseText = data.text;
+            console.log('Using data.text:', responseText);
+        } else if (data.response) {
+            // Response in a 'response' field
+            responseText = data.response;
+            console.log('Using data.response:', responseText);
+        } else if (data.completion) {
+            // Response in a 'completion' field
+            responseText = data.completion;
+            console.log('Using data.completion:', responseText);
+        } else if (data.content) {
+            // Response in a 'content' field
+            responseText = data.content;
+            console.log('Using data.content:', responseText);
+        } else if (typeof data === 'string') {
+            // Direct string response
+            responseText = data;
+            console.log('Using direct string:', responseText);
+        } else {
+            // Log all possible fields for debugging
+            console.log('Searching through all response fields:');
+            console.log('Response data type:', typeof data);
+            console.log('Response data keys:', Object.keys(data));
+            
+            for (const [key, value] of Object.entries(data)) {
+                console.log(`- ${key}:`, typeof value, value);
+                
+                // Try to find text-like content in any field
+                if (typeof value === 'string' && value.trim().length > 0) {
+                    console.log(`Found potential response text in ${key}:`, value);
+                    if (!responseText) responseText = value;
+                }
+                
+                // Also check if it's an object with text content
+                if (typeof value === 'object' && value !== null) {
+                    for (const [subKey, subValue] of Object.entries(value)) {
+                        if (typeof subValue === 'string' && subValue.trim().length > 0) {
+                            console.log(`Found potential response text in ${key}.${subKey}:`, subValue);
+                            if (!responseText) responseText = subValue;
+                        }
+                    }
+                }
+            }
+            
+            if (!responseText) {
+                console.log('No recognizable response format, using JSON string');
+                responseText = JSON.stringify(data);
+            }
+        }
+        
+        // Clean up the response text
+        responseText = responseText.trim();
+        console.log('Raw response text after cleanup:', responseText);
+        
+        // Remove any "Ozwell AI:" prefix if it's duplicated
+        if (responseText.startsWith('Ozwell AI:')) {
+            responseText = responseText.substring('Ozwell AI:'.length).trim();
+            console.log('Removed Ozwell AI prefix:', responseText);
+        }
+        
+        // If the response is too short or seems incomplete, provide a fallback
+        if (!responseText || responseText.length < 2) {
+            console.warn('Received empty or very short response from API');
+            console.log('Empty response debug info:');
+            console.log('- responseText value:', JSON.stringify(responseText));
+            console.log('- responseText length:', responseText ? responseText.length : 0);
+            console.log('- Original API response:', JSON.stringify(data));
+            
+            // Try one more time to extract any text from the response
+            const jsonStr = JSON.stringify(data);
+            if (jsonStr.includes('"') && jsonStr.length > 10) {
+                console.log('Trying to extract text from JSON structure...');
+                // Look for any quoted strings that might be the response
+                const textMatches = jsonStr.match(/"([^"]{10,})"/g);
+                if (textMatches && textMatches.length > 0) {
+                    for (const match of textMatches) {
+                        const text = match.slice(1, -1); // Remove quotes
+                        if (!text.includes('model') && !text.includes('Bearer') && !text.includes('http')) {
+                            console.log('Found potential response in JSON:', text);
+                            responseText = text;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Final fallback
+            if (!responseText || responseText.length < 2) {
+                responseText = 'Hello! I\'m Ozwell, your medical AI assistant. I received your message but had trouble processing the response. How can I help you with your medical needs today?';
+            }
+        }
+        
+        console.log('Final processed response text:', responseText);
+        return responseText;
+    }
+
+    // Keep the existing simulation methods as fallback
     async simulateOzwellAPI(messages) {
         // Get the last message from the user
         const lastMessage = messages[messages.length - 1]?.content || '';
         const msg = lastMessage.toLowerCase();
-        console.log(msg);
+        console.log('Simulating response for:', msg);
 
         // First get context if it's a request that needs patient info
         if (msg.includes('medications') || msg.includes('allergies') || msg.includes('patient')) {
@@ -125,24 +478,94 @@ PARAMS: {}`;
     }
 
     formatResponse(response) {
-        // Remove tool call syntax from user-visible response
-        return response
-            .replace(/TOOL_CALL:.*$/gm, '')
-            .replace(/PARAMS:.*$/gm, '')
-            .trim();
+        // Don't remove tool call syntax - we need to preserve the response text
+        // The tool call parsing is handled separately by parseToolCalls()
+        
+        if (!response) {
+            console.log('formatResponse: received empty response');
+            return '';
+        }
+        
+        console.log('formatResponse: processing response:', response);
+        
+        // Just return the response as-is, since the API response should already be clean
+        const formatted = response.trim();
+        console.log('formatResponse: returning formatted response:', formatted);
+        
+        return formatted;
     }
 
-    generateMedicationResponse(message) {
-        // Use LLM intelligence to analyze the medication request
-        // This simulates an LLM understanding the natural language request
-        const prompt = `
-        Analyze this medication request and extract the medication details:
-        "${message}"
+    // Configuration method to set API credentials
+    configure(config) {
+        if (config.apiKey) this.apiKey = config.apiKey;
+        if (config.baseUrl) this.baseUrl = config.baseUrl;
+        // if (config.model) this.model = config.model;
         
-        Based on medical knowledge, provide appropriate medication information.
-        `;
+        // Reset simulation mode when configuration changes
+        this.useSimulationMode = false;
+        
+        console.log('Ozwell configuration updated:', {
+            hasApiKey: !!this.apiKey,
+            baseUrl: this.baseUrl,
+            // model: this.model
+        });
+    }
 
-        // Simulate LLM processing - this would be replaced with actual LLM API call
+    // Method to test API connectivity
+    async testConnection() {
+        try {
+            const testMessages = [
+                { role: 'user', content: 'Hello, please introduce yourself as a medical AI assistant.' }
+            ];
+            
+            console.log('Testing Ozwell API connection...');
+            const response = await this.callOzwellAPI(testMessages);
+            console.log('API connection test successful:', response);
+            
+            // If test is successful, ensure we're not in simulation mode
+            this.useSimulationMode = false;
+            
+            return { success: true, response };
+        } catch (error) {
+            console.error('API connection test failed:', error);
+            
+            // Try to provide more helpful error information
+            if (error.message.includes('400')) {
+                console.log('400 error suggests invalid request format. This might mean:');
+                console.log('1. The API endpoint URL is incorrect');
+                console.log('2. The API key is invalid');
+                console.log('3. The request body format is not what the API expects');
+                console.log('4. Required headers are missing');
+                console.log('');
+                console.log('Current config:');
+                console.log('- API Key:', this.apiKey ? `${this.apiKey.substring(0, 10)}...` : 'Not set');
+                console.log('- Base URL:', this.baseUrl);
+                console.log('- Model:', this.model);
+            }
+            
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Method to manually enable simulation mode (useful for development/testing)
+    enableSimulationMode() {
+        this.useSimulationMode = true;
+        console.log('Simulation mode enabled - API calls will be skipped');
+    }
+
+    // Method to check if simulation mode is active
+    isSimulationMode() {
+        return this.useSimulationMode;
+    }
+
+    // Method to reset and retry API mode
+    retryAPIMode() {
+        this.useSimulationMode = false;
+        console.log('API mode re-enabled - will attempt API calls again');
+    }
+
+    // Keep existing helper methods for fallback simulation
+    generateMedicationResponse(message) {
         return this.simulateLLMMedicationExtraction(message);
     }
 
@@ -405,7 +828,42 @@ PARAMS: {"allergen": "${allergen}", "reaction": "${reaction}", "severity": "${se
         }
     }
 
-    // Remove the old extractMedicationInfo method and replace with LLM-driven approach
+    // Helper method to convert OpenAI-style messages to a single prompt string
+    convertMessagesToPrompt(messages) {
+        let prompt = '';
+        
+        // Start with a clear medical AI context
+        prompt += 'You are Ozwell, a professional medical AI assistant. You help healthcare providers with patient care by providing medical information, medication management, and clinical decision support.\n\n';
+        
+        for (const message of messages) {
+            switch (message.role) {
+                case 'system':
+                    // Skip system messages that are already included in our context
+                    if (!message.content.toLowerCase().includes('medical ai assistant') && 
+                        !message.content.toLowerCase().includes('ozwell')) {
+                        prompt += `System: ${message.content}\n\n`;
+                    }
+                    break;
+                case 'user':
+                    prompt += `Healthcare Provider: ${message.content}\n\n`;
+                    break;
+                case 'assistant':
+                    prompt += `Ozwell AI: ${message.content}\n\n`;
+                    break;
+                default:
+                    prompt += `${message.content}\n\n`;
+            }
+        }
+        
+        // Add a clear prompt for the assistant to respond as a medical AI
+        prompt += 'Ozwell AI:';
+        
+        console.log('Generated prompt for API:');
+        console.log('========================');
+        console.log(prompt);
+        console.log('========================');
+        return prompt;
+    }
 }
 
 // Export for use in MCP client
