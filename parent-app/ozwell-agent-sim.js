@@ -151,17 +151,22 @@ class OzwellAgentSimulator {
         window.addEventListener('message', async (event) => {
             console.log("Received message:", event.data);
             
-            // Handle MCP requests (existing functionality)
-            if (event.data.type === 'mcp-request') {
-                await this.handleMCPRequest(event.data);
+            // Note: MCP requests are now handled directly by MedicalDataManager
+            // This class now only handles Ozwell API requests and tools context
+            
+            // Handle request for tools context from iframe
+            if (event.data.type === 'request-tools-context') {
+                console.log('*** Iframe requested tools context ***');
+                medicalDataManager.log('Iframe requested tools context');
+                this.sendToolsContext();
             }
             
-            // Handle Ozwell API requests (new functionality)
+            // Handle Ozwell API requests
             else if (event.data.type === 'ozwell-request') {
                 await this.ozwellHandler.handleOzwellRequest(event);
             }
             
-            // Handle Ozwell configuration (new functionality)
+            // Handle Ozwell configuration
             else if (event.data.type === 'ozwell-config') {
                 this.ozwellHandler.handleConfiguration(event.data.config);
             }
@@ -232,6 +237,7 @@ class OzwellAgentSimulator {
         // Wait for iframe to load, then initialize
         this.iframe.onload = () => {
             this.isAgentActive = true;
+            // Send initial context and tools context
             this.sendInitialContext();
         };
     }
@@ -252,59 +258,74 @@ class OzwellAgentSimulator {
         if (!this.iframe) return;
 
         const context = getContext();
+        
+        // Send both regular context and tools context
         this.iframe.contentWindow.postMessage({
             type: 'mcp-context',
             context: context
         }, '*');
 
-        medicalDataManager.log("Initial context sent to agent");
+        // Also send tools context immediately
+        this.sendToolsContext();
+
+        medicalDataManager.log("Initial context and tools context sent to agent");
     }
 
-    async handleMCPRequest(data) {
-        medicalDataManager.log(`Received MCP request: ${data.method}`, data.params);
+    sendToolsContext() {
+        if (!this.iframe) return;
 
-        let result;
-        try {
-            switch (data.method) {
-                case 'getContext':
-                    result = getContext();
-                    break;
-                case 'addMedication':
-                    result = addMedication(data.params);
-                    break;
-                case 'discontinueMedication':
-                    result = discontinueMedication(data.params.medId || data.params);
-                    break;
-                case 'editMedication':
-                    result = editMedication(data.params.medId, data.params.updates);
-                    break;
-                case 'deleteMedication':
-                    result = deleteMedication(data.params.medId || data.params);
-                    break;
-                case 'addAllergy':
-                    result = addAllergy(data.params);
-                    break;
-                default:
-                    result = {
-                        success: false,
-                        error: `Unknown method: ${data.method}`
-                    };
-            }
-        } catch (error) {
-            result = {
-                success: false,
-                error: error.message
-            };
-        }
+        // Define the tools context from parent (where tools are actually implemented)
+        const toolsContext = {
+            availableTools: [
+                {
+                    name: 'getContext',
+                    description: 'Retrieve current patient medical information',
+                    parameters: {},
+                    implementation: 'Available via MCP server'
+                },
+                {
+                    name: 'addMedication',
+                    description: 'Add a new medication to patient records',
+                    parameters: {
+                        name: 'string - Name of the medication',
+                        dose: 'string - Dosage amount (e.g., "500mg")',
+                        frequency: 'string - How often to take (e.g., "twice daily")',
+                        indication: 'string - Reason for prescribing'
+                    },
+                    implementation: 'Available via MCP server'
+                },
+                {
+                    name: 'discontinueMedication',
+                    description: 'Discontinue an existing medication',
+                    parameters: {
+                        medId: 'string - Name or ID of medication to discontinue'
+                    },
+                    implementation: 'Available via MCP server'
+                },
+                {
+                    name: 'addAllergy',
+                    description: 'Add a new allergy to patient records',
+                    parameters: {
+                        allergen: 'string - The substance the patient is allergic to',
+                        reaction: 'string - The type of reaction experienced',
+                        severity: 'string - Severity level: "Mild", "Moderate", or "Severe"'
+                    },
+                    implementation: 'Available via MCP server'
+                }
+            ],
+            currentContext: getContext().data, // Get current patient context
+            sourceLocation: 'parent-app'
+        };
 
-        // Send result back to iframe
-        if (this.iframe) {
-            this.iframe.contentWindow.postMessage({
-                type: 'mcp-response',
-                requestId: data.requestId,
-                result: result
-            }, '*');
-        }
+        console.log('*** Parent app sending tools context to iframe ***', toolsContext);
+
+        // Send tools context to iframe for Ozwell
+        this.iframe.contentWindow.postMessage({
+            type: 'mcp-tools-context',
+            toolsContext: toolsContext
+        }, '*');
+
+        medicalDataManager.log("Tools context sent to iframe for Ozwell");
     }
 
     runSimulation() {
@@ -348,7 +369,7 @@ class OzwellAgentSimulator {
 // Parent Window - Ozwell API Handler (Updated to work with existing structure)
 class OzwellAPIHandler {
     constructor() {
-        this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk';
+        this.apiKey = 'Add API key here'; // In production, this should be securely managed
         this.baseUrl = 'https://ai.bluehive.com/api/v1/completion';
         this.defaultModel = 'ozwell-medical-v1';
     }

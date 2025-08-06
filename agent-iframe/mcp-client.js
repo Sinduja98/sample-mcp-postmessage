@@ -11,6 +11,17 @@ class MCPClient {
         this.configureOzwell();
         this.initializeMCP();
         this.setupMessageListener();
+        
+        // Listen for when window finishes loading to ensure tools context is passed
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                // Small delay to ensure everything is initialized
+                setTimeout(() => this.passToolsContextToOzwell(), 100);
+            });
+        } else {
+            // Already loaded, pass context immediately  
+            setTimeout(() => this.passToolsContextToOzwell(), 100);
+        }
     }
 
     configureOzwell() {
@@ -144,7 +155,27 @@ class MCPClient {
                 this.addSystemMessage('Patient context loaded successfully');
             } else if (event.data.type === 'mcp-response') {
                 this.handleToolResponse(event.data);
-            } 
+            } else if (event.data.type === 'tools-context') {
+                // Receive tools context from parent and pass to Ozwell
+                console.log('*** Received tools context from parent ***', event.data.toolsContext);
+                if (this.ozwell && this.ozwell.updateToolsContext) {
+                    this.ozwell.updateToolsContext(event.data.toolsContext);
+                    this.addSystemMessage('🔧 Tools context received and passed to Ozwell AI');
+                    console.log('*** Tools context successfully passed to Ozwell ***');
+                    console.log('*** Available tools in Ozwell:', event.data.toolsContext.availableTools);
+                    
+                    // Display available tools in chat
+                    if (event.data.toolsContext.availableTools) {
+                        const toolNames = event.data.toolsContext.availableTools.map(tool => tool.name || tool).join(', ');
+                        this.addSystemMessage(`🛠️ Available tools: ${toolNames}`);
+                    }
+                } else {
+                    console.error('*** Ozwell not available or updateToolsContext method missing ***');
+                }
+            } else if (event.data.type === 'request-tools-context') {
+                // Handle internal tools context request
+                this.handleToolsContextRequest();
+            }
             // else if (event.data.type === 'run-simulation') {
             //     this.runSimulation(event.data.tasks);
             // }
@@ -194,6 +225,29 @@ class MCPClient {
         const message = this.userInput.value.trim();
         if (!message) return;
         
+        // Check for special commands
+        if (message.toLowerCase() === '/test-tools') {
+            this.userInput.value = '';
+            this.addMessage(message, 'user');
+            this.testAvailableTools();
+            return;
+        }
+        
+        if (message.toLowerCase() === '/help') {
+            this.userInput.value = '';
+            this.addMessage(message, 'user');
+            this.addSystemMessage(`
+                🔧 Available commands:
+                • /test-tools - Test what tools are available
+                • /help - Show this help message
+                • Ctrl+T - Test available tools
+                • Ctrl+R - Refresh connections
+                • Ctrl+L - Clear chat
+                • Ctrl+E - Export chat
+            `);
+            return;
+        }
+        
         this.userInput.value = '';
         this.addMessage(message, 'user');
         this.chatHistory.push({ role: 'user', content: message });
@@ -212,11 +266,14 @@ class MCPClient {
     }
 
     async processMessage(message) {
+        console.log('*** processMessage called with:', message);
+        
         // Get AI response
         let responseMessage = null;
         let fullResponse = '';
         
         try {
+            console.log('*** About to call ozwell.generateResponse ***');
             const response = await this.ozwell.generateResponse(this.chatHistory, (chunk) => {
                 if (!responseMessage) {
                     responseMessage = this.addMessage('', 'assistant', true);
@@ -251,9 +308,12 @@ class MCPClient {
             console.log('=== End Response Debug ===');
             
             // Check for tool calls
+            console.log('*** Checking for tool calls in response ***');
             const toolCalls = this.ozwell.parseToolCalls(fullResponse);
+            console.log('*** Found tool calls:', toolCalls);
             if (toolCalls.length > 0) {
                 for (const toolCall of toolCalls) {
+                    console.log('*** Executing tool:', toolCall.name, 'with params:', toolCall.parameters);
                     await this.executeTool(toolCall.name, toolCall.parameters);
                 }
             }
@@ -299,7 +359,7 @@ class MCPClient {
         });
     }
 
-    handleToolResponse(data) {
+    async handleToolResponse(data) {
         const request = this.pendingRequests?.[data.requestId];
         if (!request) return;
         
@@ -312,8 +372,54 @@ class MCPClient {
         
         if (data.result.success) {
             this.addSystemMessage(`✅ ${request.toolName} completed: ${data.result.message || 'Success'}`);
+            
+            // Generate intelligent follow-up response from Ozwell
+            try {
+                this.updateStatus('thinking', 'Ozwell is processing the result...');
+                
+                // Pass recent chat history to Ozwell for context
+                this.ozwell.recentMessages = this.chatHistory.slice(-3).map(m => m.content);
+                
+                const followUpResponse = await this.ozwell.handleToolResult(
+                    request.toolName, 
+                    data.result, 
+                    request
+                );
+                
+                if (followUpResponse && followUpResponse.trim()) {
+                    const responseMessage = this.addMessage(followUpResponse, 'assistant');
+                    this.chatHistory.push({ role: 'assistant', content: followUpResponse });
+                    
+                    // Check if the follow-up response contains more tool calls
+                    const toolCalls = this.ozwell.parseToolCalls(followUpResponse);
+                    if (toolCalls.length > 0) {
+                        for (const toolCall of toolCalls) {
+                            await this.executeTool(toolCall.name, toolCall.parameters);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error generating follow-up response:', error);
+                this.addSystemMessage('💭 Tool completed successfully, but unable to generate follow-up response');
+            }
         } else {
             this.addSystemMessage(`❌ ${request.toolName} failed: ${data.result.error}`);
+            
+            // Generate error response from Ozwell
+            try {
+                const errorResponse = await this.ozwell.handleToolResult(
+                    request.toolName, 
+                    data.result, 
+                    request
+                );
+                
+                if (errorResponse && errorResponse.trim()) {
+                    this.addMessage(errorResponse, 'assistant');
+                    this.chatHistory.push({ role: 'assistant', content: errorResponse });
+                }
+            } catch (error) {
+                console.error('Error generating error response:', error);
+            }
         }
         
         this.updateStatus('connected', 'Ready');
@@ -363,22 +469,119 @@ class MCPClient {
                 params: {}
             }, '*');
 
+            // Get tools context from MCP server via postMessage
+            window.postMessage({
+                type: 'request-tools-context'
+            }, '*');
+            
+            this.addSystemMessage('🔗 Connected to medical system and requested patient context and tools context from MCP server');
+
             // Store request for response handling
             this.pendingRequests = this.pendingRequests || {};
-            this.pendingRequests[requestId] = { 
-                toolName: 'getContext',
-                onResponse: (result) => {
-                    if (result.success) {
-                        this.context = result.data;
-                        this.addSystemMessage('Connected to medical system and loaded patient context');
-                    }
-                }
-            };
+            // this.pendingRequests[requestId] = { 
+            //     toolName: 'getContext',
+            //     onResponse: (result) => {
+            //         if (result.success) {
+            //             this.context = result.data;
+            //             this.addSystemMessage('Connected to medical system and loaded patient context');
+                        
+            //             // Pass tools context to Ozwell immediately after loading context
+            //             this.passToolsContextToOzwell();
+            //         }
+            //     }
+            // };
+            
+            // Also pass tools context immediately on iframe load
+            this.passToolsContextToOzwell();
         } catch (error) {
             console.error('Failed to initialize MCP:', error);
             this.updateStatus('error', 'Failed to connect to medical system');
             this.addSystemMessage('❌ Failed to connect to medical system: ' + error.message);
         }
+    }
+
+    // Handle internal tools context request via postMessage
+    async handleToolsContextRequest() {
+        try {
+            if (this.mcpServer && this.mcpServer.getTools) {
+                const availableTools = await this.mcpServer.getTools();
+                console.log('*** Retrieved tools from MCP server via postMessage:', availableTools);
+                
+                // Create tools context for Ozwell
+                const toolsContext = {
+                    availableTools: availableTools,
+                    toolDescriptions: {
+                        addMedication: "Add a new medication to patient records with proper validation and allergy checking",
+                        editMedication: "Edit an existing medication in patient records with conflict validation",
+                        getContext: "Get current patient context including medications, allergies, and conditions",
+                        discontinueMedication: "Discontinue an existing medication from patient records",
+                        addAllergy: "Add a new allergy to patient records"
+                    },
+                    mcpEnabled: true
+                };
+                
+                // Send tools context response back via postMessage
+                window.postMessage({
+                    type: 'tools-context',
+                    toolsContext: toolsContext
+                }, '*');
+                
+                console.log('*** Tools context sent via postMessage ***');
+            } else {
+                console.warn('*** MCP server not available or getTools method missing ***');
+                this.addSystemMessage('⚠️ MCP server not available for tools context');
+            }
+        } catch (error) {
+            console.error('Error getting tools context from MCP server via postMessage:', error);
+            this.addSystemMessage('❌ Failed to get tools context from MCP server');
+        }
+    }
+
+    // Request tools context from MCP server
+    async requestToolsContextFromMCP() {
+        try {
+            if (this.mcpServer && this.mcpServer.getTools) {
+                const availableTools = await this.mcpServer.getTools();
+                console.log('*** Retrieved tools from MCP server:', availableTools);
+                
+                // Create tools context for Ozwell
+                const toolsContext = {
+                    availableTools: availableTools,
+                    toolDescriptions: {
+                        addMedication: "Add a new medication to patient records with proper validation and allergy checking",
+                        editMedication: "Edit an existing medication in patient records with conflict validation",
+                        getContext: "Get current patient context including medications, allergies, and conditions",
+                        discontinueMedication: "Discontinue an existing medication from patient records",
+                        addAllergy: "Add a new allergy to patient records"
+                    },
+                    mcpEnabled: true
+                };
+                
+                // Pass tools context directly to Ozwell
+                if (this.ozwell && this.ozwell.updateToolsContext) {
+                    this.ozwell.updateToolsContext(toolsContext);
+                    this.addSystemMessage('🔧 Tools context retrieved from MCP server and passed to Ozwell AI');
+                    console.log('*** Tools context successfully passed to Ozwell from MCP server ***');
+                } else {
+                    console.error('*** Ozwell not available or updateToolsContext method missing ***');
+                }
+            } else {
+                console.warn('*** MCP server not available or getTools method missing ***');
+                this.addSystemMessage('⚠️ MCP server not available for tools context');
+            }
+        } catch (error) {
+            console.error('Error getting tools context from MCP server:', error);
+            this.addSystemMessage('❌ Failed to get tools context from MCP server');
+        }
+    }
+
+    // Pass available tools context to Ozwell via postMessage
+    passToolsContextToOzwell() {
+        // Request tools context from MCP server via postMessage
+        console.log('*** Requesting tools context from MCP server via postMessage ***');
+        window.postMessage({
+            type: 'request-tools-context'
+        }, '*');
     }
 
     // Method to manually refresh API connection
@@ -428,6 +631,42 @@ class MCPClient {
         if (errorMessage.includes('API') || errorMessage.includes('fetch') || errorMessage.includes('network')) {
             this.addSystemMessage('💡 Tip: Check your API configuration or network connection');
         }
+   }
+
+    // Test method to check available tools in Ozwell
+    testAvailableTools() {
+        console.log('*** Testing available tools in Ozwell ***');
+        
+        if (this.ozwell) {
+            // Check if Ozwell has a method to get available tools
+            if (this.ozwell.getAvailableTools) {
+                const tools = this.ozwell.getAvailableTools();
+                console.log('*** Tools from Ozwell.getAvailableTools():', tools);
+                this.addSystemMessage(`🔍 Tools from Ozwell: ${JSON.stringify(tools, null, 2)}`);
+            }
+            
+            // Check if there's a tools context stored
+            if (this.ozwell.toolsContext) {
+                console.log('*** Tools context in Ozwell:', this.ozwell.toolsContext);
+                this.addSystemMessage(`🔍 Ozwell tools context: ${JSON.stringify(this.ozwell.toolsContext, null, 2)}`);
+            }
+            
+            // Check if there are any tool-related properties
+            // console.log('*** Ozwell object properties:', Object.keys(this.ozwell));
+            // this.addSystemMessage(`🔍 Ozwell properties: ${Object.keys(this.ozwell).join(', ')}`);
+        } else {
+            this.addSystemMessage('❌ Ozwell not available for tools testing');
+        }
+        
+        // Also check MCP server tools
+        if (this.mcpServer && this.mcpServer.getTools) {
+            this.mcpServer.getTools().then(tools => {
+                console.log('*** MCP Server tools:', tools);
+                this.addSystemMessage(`🔍 MCP Server tools: ${JSON.stringify(tools, null, 2)}`);
+            }).catch(error => {
+                console.error('Error getting MCP tools:', error);
+            });
+        }
     }
 }
 
@@ -453,6 +692,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.ctrlKey && e.key === 'e') {
             e.preventDefault();
             window.mcpClient.exportChat();
+        }
+        
+        // Ctrl+T to test available tools
+        if (e.ctrlKey && e.key === 't') {
+            e.preventDefault();
+            window.mcpClient.testAvailableTools();
         }
     });
 });
