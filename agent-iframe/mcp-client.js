@@ -1,26 +1,25 @@
-// MCP Client - Updated for Real Ozwell API Integration
+// MCP Client - Updated to use MCP Tools directly instead of Ozwell responses
 class MCPClient {
     constructor() {
-        this.ozwell = new OzwellIntegration();
+        this.ozwell = new OzwellIntegration(); // Used for message analysis, not response generation
         this.chatHistory = [];
         this.requestCounter = 0;
         this.mcpServer = null;
         this.context = null;
+        this.availableTools = [];
         
         this.initializeUI();
-        this.configureOzwell();
+        this.configureOzwell(); // Keep for potential future use
         this.initializeMCP();
         this.setupMessageListener();
         
         // Listen for when window finishes loading to ensure tools context is passed
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
-                // Small delay to ensure everything is initialized
-                setTimeout(() => this.passToolsContextToOzwell(), 100);
+                setTimeout(() => this.requestToolsFromMCPServer(), 100);
             });
         } else {
-            // Already loaded, pass context immediately  
-            setTimeout(() => this.passToolsContextToOzwell(), 100);
+            setTimeout(() => this.requestToolsFromMCPServer(), 100);
         }
     }
 
@@ -150,35 +149,46 @@ class MCPClient {
 
     setupMessageListener() {
         window.addEventListener('message', (event) => {
-            if (event.data.type === 'mcp-context') {
-                this.patientContext = event.data.context;
-                this.addSystemMessage('Patient context loaded successfully');
-            } else if (event.data.type === 'mcp-response') {
-                this.handleToolResponse(event.data);
-            } else if (event.data.type === 'tools-context') {
-                // Receive tools context from parent and pass to Ozwell
-                console.log('*** Received tools context from parent ***', event.data.toolsContext);
-                if (this.ozwell && this.ozwell.updateToolsContext) {
-                    this.ozwell.updateToolsContext(event.data.toolsContext);
-                    this.addSystemMessage('🔧 Tools context received and passed to Ozwell AI');
-                    console.log('*** Tools context successfully passed to Ozwell ***');
-                    console.log('*** Available tools in Ozwell:', event.data.toolsContext.availableTools);
+            console.log('MCPClient received message:', event.data);
+            
+            switch (event.data.type) {
+                case 'mcp-tools-available':
+                    // Receive available tools from MCP Server
+                    console.log("*** Received available tools from MCP Server ***", event.data.tools);
+                    this.handleToolsReceived(event.data.tools);
+                    break;
                     
-                    // Display available tools in chat
-                    if (event.data.toolsContext.availableTools) {
-                        const toolNames = event.data.toolsContext.availableTools.map(tool => tool.name || tool).join(', ');
-                        this.addSystemMessage(`🛠️ Available tools: ${toolNames}`);
+                case 'mcp-tool-response':
+                    // Receive tool execution response from MCP Server
+                    this.handleToolExecutionResponse(event.data);
+                    break;
+                    
+                case 'mcp-context':
+                    // Receive patient context
+                    this.patientContext = event.data.context;
+                    this.addSystemMessage('📋 Patient context loaded successfully');
+                    break;
+                    
+                case 'mcp-response':
+                    this.handleToolResponse(event.data);
+                    break;
+                    
+                case 'tools-context':
+                    // Legacy support - convert to new format
+                    if (event.data.toolsContext && event.data.toolsContext.availableTools) {
+                        this.handleToolsReceived(event.data.toolsContext.availableTools);
                     }
-                } else {
-                    console.error('*** Ozwell not available or updateToolsContext method missing ***');
-                }
-            } else if (event.data.type === 'request-tools-context') {
-                // Handle internal tools context request
-                this.handleToolsContextRequest();
+                    break;
+                    
+                case 'medication-response':
+                    // Handle medication response from parent
+                    this.addMessage(event.data.message, 'assistant');
+                    this.chatHistory.push({ role: 'assistant', content: event.data.message });
+                    break;
+                    
+                default:
+                    console.log('Unknown message type:', event.data.type);
             }
-            // else if (event.data.type === 'run-simulation') {
-            //     this.runSimulation(event.data.tasks);
-            // }
         });
     }
 
@@ -236,15 +246,7 @@ class MCPClient {
         if (message.toLowerCase() === '/help') {
             this.userInput.value = '';
             this.addMessage(message, 'user');
-            this.addSystemMessage(`
-                🔧 Available commands:
-                • /test-tools - Test what tools are available
-                • /help - Show this help message
-                • Ctrl+T - Test available tools
-                • Ctrl+R - Refresh connections
-                • Ctrl+L - Clear chat
-                • Ctrl+E - Export chat
-            `);
+            this.showHelp();
             return;
         }
         
@@ -268,54 +270,24 @@ class MCPClient {
     async processMessage(message) {
         console.log('*** processMessage called with:', message);
         
-        // Get AI response
-        let responseMessage = null;
-        let fullResponse = '';
-        
         try {
-            console.log('*** About to call ozwell.generateResponse ***');
-            const response = await this.ozwell.generateResponse(this.chatHistory, (chunk) => {
-                if (!responseMessage) {
-                    responseMessage = this.addMessage('', 'assistant', true);
-                }
-                fullResponse += chunk;
-                const contentDiv = responseMessage.querySelector('.message-content');
-                if (contentDiv) {
-                    contentDiv.textContent = this.ozwell.formatResponse(fullResponse);
-                }
-            });
+            // Analyze user message to determine appropriate MCP tool action
+            const toolAction = this.analyzeMessageForToolAction(message);
             
-            console.log('=== MCP Client Response Debug ===');
-            console.log('Raw API response:', response);
-            console.log('Response type:', typeof response);
-            console.log('Response length:', response ? response.length : 0);
-            
-            // If we didn't get streaming, add the full response
-            if (!responseMessage) {
-                const formattedResponse = this.ozwell.formatResponse(response);
-                console.log('Formatted response for display:', formattedResponse);
-                responseMessage = this.addMessage(formattedResponse, 'assistant');
-                fullResponse = response; // Keep the original response for tool call parsing
-            }
-            
-            // Remove streaming indicator
-            if (responseMessage) {
-                responseMessage.id = '';
-            }
-            
-            this.chatHistory.push({ role: 'assistant', content: fullResponse });
-            console.log('Added to chat history:', fullResponse);
-            console.log('=== End Response Debug ===');
-            
-            // Check for tool calls
-            console.log('*** Checking for tool calls in response ***');
-            const toolCalls = this.ozwell.parseToolCalls(fullResponse);
-            console.log('*** Found tool calls:', toolCalls);
-            if (toolCalls.length > 0) {
-                for (const toolCall of toolCalls) {
-                    console.log('*** Executing tool:', toolCall.name, 'with params:', toolCall.parameters);
-                    await this.executeTool(toolCall.name, toolCall.parameters);
-                }
+            if (toolAction) {
+                console.log('*** Determined tool action:', toolAction);
+                this.addSystemMessage(`🔧 Analyzing request: ${toolAction.description}`);
+                
+                // Execute the appropriate MCP tool
+                await this.executeToolViaMCP(toolAction.toolName, toolAction.parameters);
+            } else {
+                // If no specific tool action is detected, get context to provide general assistance
+                console.log('*** No specific tool action detected, getting patient context for general assistance ***');
+                //wanted to call ozwell here
+             
+
+                // this.addSystemMessage('🔍 Getting patient context to assist you...');
+                // await this.executeToolViaMCP('getContext', {});
             }
         } catch (error) {
             console.error('Error in processMessage:', error);
@@ -323,136 +295,225 @@ class MCPClient {
         }
     }
 
-    async executeTool(toolName, parameters) {
+    async executeToolViaMCP(toolName, parameters) {
         this.updateStatus('executing', `Executing ${toolName}...`);
         
         const requestId = ++this.requestCounter;
         
-        return new Promise((resolve, reject) => {
-            // Store request for response handling
-            this.pendingRequests = this.pendingRequests || {};
-            this.pendingRequests[requestId] = {
-                toolName,
-                parameters,
-                onResponse: (result) => {
-                    if (result.success) {
-                        // Update context if tool execution was successful
-                        if (toolName === 'getContext') {
-                            this.context = result.data;
-                        }
-                        resolve(result);
-                    } else {
-                        reject(new Error(result.error));
-                    }
-                }
-            };
-            
-            // Send tool execution request to parent
-            window.parent.postMessage({
-                type: 'mcp-request',
-                requestId: requestId,
-                method: toolName,
-                params: parameters
-            }, '*');
-        }).finally(() => {
-            this.updateStatus('connected', 'Ready');
+        console.log('*** Sending tool execution request to MCP Server:', {
+            toolName,
+            parameters,
+            requestId
         });
+        
+        // Send tool execution request to MCP Server via postMessage
+        window.postMessage({
+            type: 'mcp-execute-tool',
+            requestId: requestId,
+            toolName: toolName,
+            parameters: parameters
+        }, '*');
+        
+        this.addSystemMessage(`🔧 Requested ${toolName} execution from MCP Server`);
     }
 
     async handleToolResponse(data) {
-        const request = this.pendingRequests?.[data.requestId];
-        if (!request) return;
+        // This method is used for legacy compatibility
+        // The main response handling is now done in handleToolExecutionResponse
+        console.log('handleToolResponse called - delegating to handleToolExecutionResponse');
+        return this.handleToolExecutionResponse(data);
+    }
+
+    async requestToolsFromMCPServer() {
+        console.log('*** Requesting available tools from MCP Server ***');
         
-        // If there's a specific response handler, call it
-        if (request.onResponse) {
-            request.onResponse(data.result);
-        }
+        // Request tools from MCP Server
+        window.postMessage({
+            type: 'mcp-get-tools'
+        }, '*');
         
-        delete this.pendingRequests[data.requestId];
+        this.addSystemMessage('🔍 Requesting available tools from MCP Server...');
+    }
+
+    handleToolsReceived(tools) {
+        console.log('*** Received tools from MCP Server:', tools);
+        this.availableTools = tools;
         
-        if (data.result.success) {
-            this.addSystemMessage(`✅ ${request.toolName} completed: ${data.result.message || 'Success'}`);
+        // Display available tools to user
+        const toolNames = tools.map(tool => tool.name).join(', ');
+        this.addSystemMessage(`🛠️ Available MCP tools: ${toolNames}`);
+        
+        this.addSystemMessage('🔧 MCP tools are ready for use');
+        
+        // Log tool details for debugging
+        console.log('Available tools details:', tools);
+    }
+
+    createToolDescriptions(tools) {
+        const descriptions = {};
+        tools.forEach(tool => {
+            descriptions[tool.name] = tool.description;
+        });
+        return descriptions;
+    }
+
+    handleToolExecutionResponse(data) {
+        console.log('*** Received tool execution response:', data);
+        
+        const { requestId, toolName, result, success, error, message } = data;
+        
+        if (success) {
+            this.addSystemMessage(`✅ ${toolName} executed successfully`);
             
-            // Generate intelligent follow-up response from Ozwell
-            try {
-                this.updateStatus('thinking', 'Ozwell is processing the result...');
-                
-                // Pass recent chat history to Ozwell for context
-                this.ozwell.recentMessages = this.chatHistory.slice(-3).map(m => m.content);
-                
-                const followUpResponse = await this.ozwell.handleToolResult(
-                    request.toolName, 
-                    data.result, 
-                    request
-                );
-                
-                if (followUpResponse && followUpResponse.trim()) {
-                    const responseMessage = this.addMessage(followUpResponse, 'assistant');
-                    this.chatHistory.push({ role: 'assistant', content: followUpResponse });
-                    
-                    // Check if the follow-up response contains more tool calls
-                    const toolCalls = this.ozwell.parseToolCalls(followUpResponse);
-                    if (toolCalls.length > 0) {
-                        for (const toolCall of toolCalls) {
-                            await this.executeTool(toolCall.name, toolCall.parameters);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error generating follow-up response:', error);
-                this.addSystemMessage('💭 Tool completed successfully, but unable to generate follow-up response');
-            }
+            // Format and display the response from MCP server
+            let responseText = this.formatMCPResponse(toolName, result, message);
+            
+            // Add the response as an assistant message
+            this.addMessage(responseText, 'assistant');
+            this.chatHistory.push({ role: 'assistant', content: responseText });
+            
         } else {
-            this.addSystemMessage(`❌ ${request.toolName} failed: ${data.result.error}`);
+            this.addSystemMessage(`❌ ${toolName} failed: ${error}`);
             
-            // Generate error response from Ozwell
-            try {
-                const errorResponse = await this.ozwell.handleToolResult(
-                    request.toolName, 
-                    data.result, 
-                    request
-                );
-                
-                if (errorResponse && errorResponse.trim()) {
-                    this.addMessage(errorResponse, 'assistant');
-                    this.chatHistory.push({ role: 'assistant', content: errorResponse });
-                }
-            } catch (error) {
-                console.error('Error generating error response:', error);
-            }
+            // Add error response
+            const errorResponseText = `I encountered an error while trying to ${toolName}: ${error}. Please check the details and try again.`;
+            this.addMessage(errorResponseText, 'assistant');
+            this.chatHistory.push({ role: 'assistant', content: errorResponseText });
         }
         
         this.updateStatus('connected', 'Ready');
     }
 
-    async runSimulation(tasks) {
-        this.addSystemMessage('🔄 Running simulation with the following tasks...');
+    formatMCPResponse(toolName, result, message) {
+        switch (toolName) {
+            case 'getContext':
+                return this.formatContextResponse(result);
+                
+            case 'addMedication':
+                return this.formatMedicationResponse(result, message);
+                
+            case 'discontinueMedication':
+                return this.formatDiscontinueResponse(result, message);
+                
+            case 'addAllergy':
+                return this.formatAllergyResponse(result, message);
+                
+            default:
+                return message || 'Operation completed successfully.';
+        }
+    }
+
+    formatContextResponse(contextData) {
+        if (!contextData) return 'Unable to retrieve patient context.';
         
-        for (let i = 0; i < tasks.length; i++) {
-            const task = tasks[i];
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay between tasks
-            
-            let message = '';
-            switch (task.action) {
-                case 'addMedication':
-                    message = `Add ${task.data.name} ${task.data.dose} ${task.data.frequency}`;
-                    break;
-                case 'discontinueMedication':
-                    message = `Discontinue ${task.data}`;
-                    break;
-                case 'addAllergy':
-                    message = `Add allergy to ${task.data.allergen}`;
-                    break;
-            }
-            
-            this.addMessage(message, 'user');
-            this.chatHistory.push({ role: 'user', content: message });
-            
-            await this.processMessage(message);
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for completion
+        let response = `📋 **Patient Medical Summary**\n\n`;
+        
+        if (contextData.patientInfo) {
+            response += `**Patient:** ${contextData.patientInfo.name} (Age: ${contextData.patientInfo.age})\n`;
+            response += `**ID:** ${contextData.patientInfo.patientId}\n\n`;
         }
         
-        this.addSystemMessage('✅ Simulation completed successfully!');
+        response += `**Current Medications (${contextData.totalMedications || 0}):**\n`;
+        if (contextData.medications && contextData.medications.length > 0) {
+            contextData.medications.forEach((med, index) => {
+                response += `${index + 1}. ${med.name} ${med.dose} ${med.frequency}`;
+                if (med.indication) response += ` - ${med.indication}`;
+                response += `\n`;
+            });
+        } else {
+            response += 'No medications currently prescribed.\n';
+        }
+        
+        response += `\n**Known Allergies (${contextData.totalAllergies || 0}):**\n`;
+        if (contextData.allergies && contextData.allergies.length > 0) {
+            contextData.allergies.forEach((allergy, index) => {
+                response += `${index + 1}. ${allergy.allergen}`;
+                if (allergy.reaction) response += ` (${allergy.reaction})`;
+                if (allergy.severity) response += ` - ${allergy.severity}`;
+                response += `\n`;
+            });
+        } else {
+            response += 'No known allergies recorded.\n';
+        }
+        
+        response += `\n*Last updated: ${new Date(contextData.lastUpdated).toLocaleString()}*`;
+        
+        return response;
+    }
+
+    formatMedicationResponse(medicationData, message) {
+        if (!medicationData) return message || 'Medication added successfully.';
+        
+        let response = `✅ **Medication Added Successfully**\n\n`;
+        response += `**Medication:** ${medicationData.name}\n`;
+        response += `**Dose:** ${medicationData.dose}\n`;
+        response += `**Frequency:** ${medicationData.frequency}\n`;
+        if (medicationData.indication) {
+            response += `**Indication:** ${medicationData.indication}\n`;
+        }
+        response += `**Start Date:** ${medicationData.startDate}\n`;
+        response += `**ID:** ${medicationData.id}\n\n`;
+        
+        response += `The medication has been added to the patient's current medication list. Please ensure to monitor for effectiveness and any potential side effects.`;
+        
+        return response;
+    }
+
+    formatDiscontinueResponse(medicationData, message) {
+        if (!medicationData) return message || 'Medication discontinued successfully.';
+        
+        let response = `🛑 **Medication Discontinued**\n\n`;
+        response += `**Medication:** ${medicationData.name}\n`;
+        if (medicationData.dose) response += `**Dose:** ${medicationData.dose}\n`;
+        if (medicationData.frequency) response += `**Frequency:** ${medicationData.frequency}\n`;
+        
+        response += `\nThe medication has been removed from the patient's active medication list.`;
+        
+        return response;
+    }
+
+    formatAllergyResponse(allergyData, message) {
+        if (!allergyData) return message || 'Allergy added successfully.';
+        
+        let response = `⚠️ **Allergy Added to Patient Record**\n\n`;
+        response += `**Allergen:** ${allergyData.allergen}\n`;
+        if (allergyData.reaction) response += `**Reaction:** ${allergyData.reaction}\n`;
+        if (allergyData.severity) response += `**Severity:** ${allergyData.severity}\n`;
+        
+        response += `\nThis allergy has been added to the patient's medical record and will be checked against future medication prescriptions.`;
+        
+        return response;
+    }
+
+    // Legacy methods - kept for compatibility but no longer used in main flow
+    async generateOzwellFollowUp(toolName, result) {
+        // This method is no longer used since we format responses directly
+        console.log('generateOzwellFollowUp called but skipped - using direct MCP responses');
+    }
+
+    async generateOzwellErrorResponse(toolName, error) {
+        // This method is no longer used since we format error responses directly
+        console.log('generateOzwellErrorResponse called but skipped - using direct MCP error handling');
+    }
+
+    showHelp() {
+        this.addSystemMessage(`
+            🏥 **Medical AI Assistant Help**
+            
+            **What I can do:**
+            • Add medications (e.g., "Add aspirin 81mg once daily for heart protection")
+            • Show patient information (e.g., "Show current medications")
+            • Add allergies (e.g., "Add allergy to penicillin causes rash")
+            • Discontinue medications (e.g., "Stop aspirin")
+            
+            **Commands:**
+            • /test-tools - Test available MCP tools
+            • /help - Show this help message
+            • Ctrl+T - Test available tools
+            • Ctrl+R - Refresh connections
+            • Ctrl+L - Clear chat
+            • Ctrl+E - Export chat
+        `);
     }
 
     async initializeMCP() {
@@ -460,39 +521,12 @@ class MCPClient {
             this.mcpServer = await new MedicalMCPServer().initialize();
             this.updateStatus('connected', 'Connected to medical system');
             
-            // Get initial context
-            const requestId = ++this.requestCounter;
-            window.parent.postMessage({
-                type: 'mcp-request',
-                requestId: requestId,
-                method: 'getContext',
-                params: {}
-            }, '*');
-
-            // Get tools context from MCP server via postMessage
-            window.postMessage({
-                type: 'request-tools-context'
-            }, '*');
+            this.addSystemMessage('🔗 Connected to medical system');
+            this.addSystemMessage('💬 I can help you with medical tasks like adding medications, managing allergies, and viewing patient information. Just tell me what you need!');
             
-            this.addSystemMessage('🔗 Connected to medical system and requested patient context and tools context from MCP server');
-
-            // Store request for response handling
-            this.pendingRequests = this.pendingRequests || {};
-            // this.pendingRequests[requestId] = { 
-            //     toolName: 'getContext',
-            //     onResponse: (result) => {
-            //         if (result.success) {
-            //             this.context = result.data;
-            //             this.addSystemMessage('Connected to medical system and loaded patient context');
-                        
-            //             // Pass tools context to Ozwell immediately after loading context
-            //             this.passToolsContextToOzwell();
-            //         }
-            //     }
-            // };
+            // Request tools from MCP server
+            this.requestToolsFromMCPServer();
             
-            // Also pass tools context immediately on iframe load
-            this.passToolsContextToOzwell();
         } catch (error) {
             console.error('Failed to initialize MCP:', error);
             this.updateStatus('error', 'Failed to connect to medical system');
@@ -500,88 +534,55 @@ class MCPClient {
         }
     }
 
-    // Handle internal tools context request via postMessage
-    async handleToolsContextRequest() {
-        try {
-            if (this.mcpServer && this.mcpServer.getTools) {
-                const availableTools = await this.mcpServer.getTools();
-                console.log('*** Retrieved tools from MCP server via postMessage:', availableTools);
-                
-                // Create tools context for Ozwell
-                const toolsContext = {
-                    availableTools: availableTools,
-                    toolDescriptions: {
-                        addMedication: "Add a new medication to patient records with proper validation and allergy checking",
-                        editMedication: "Edit an existing medication in patient records with conflict validation",
-                        getContext: "Get current patient context including medications, allergies, and conditions",
-                        discontinueMedication: "Discontinue an existing medication from patient records",
-                        addAllergy: "Add a new allergy to patient records"
-                    },
-                    mcpEnabled: true
-                };
-                
-                // Send tools context response back via postMessage
-                window.postMessage({
-                    type: 'tools-context',
-                    toolsContext: toolsContext
-                }, '*');
-                
-                console.log('*** Tools context sent via postMessage ***');
-            } else {
-                console.warn('*** MCP server not available or getTools method missing ***');
-                this.addSystemMessage('⚠️ MCP server not available for tools context');
-            }
-        } catch (error) {
-            console.error('Error getting tools context from MCP server via postMessage:', error);
-            this.addSystemMessage('❌ Failed to get tools context from MCP server');
+    testAvailableTools() {
+        console.log('*** Testing available tools ***');
+        
+        if (this.availableTools.length > 0) {
+            this.addSystemMessage(`🔍 Available MCP Tools: ${this.availableTools.map(t => t.name).join(', ')}`);
+            
+            this.availableTools.forEach(tool => {
+                console.log(`Tool: ${tool.name} - ${tool.description}`);
+                this.addSystemMessage(`🛠️ ${tool.name}: ${tool.description}`);
+            });
+        } else {
+            this.addSystemMessage('❌ No tools available from MCP Server');
         }
+        
+        if (this.ozwell && this.ozwell.getAvailableTools) {
+            const ozwellTools = this.ozwell.getAvailableTools();
+            this.addSystemMessage(`🔍 Ozwell tools: ${JSON.stringify(ozwellTools)}`);
+        }
+        
+        // Test MCP Server directly
+        this.testMCPServerDirectly();
     }
 
-    // Request tools context from MCP server
-    async requestToolsContextFromMCP() {
+    async testMCPServerDirectly() {
         try {
-            if (this.mcpServer && this.mcpServer.getTools) {
-                const availableTools = await this.mcpServer.getTools();
-                console.log('*** Retrieved tools from MCP server:', availableTools);
+            if (this.mcpServer) {
+                this.addSystemMessage('🧪 Testing MCP Server directly...');
                 
-                // Create tools context for Ozwell
-                const toolsContext = {
-                    availableTools: availableTools,
-                    toolDescriptions: {
-                        addMedication: "Add a new medication to patient records with proper validation and allergy checking",
-                        editMedication: "Edit an existing medication in patient records with conflict validation",
-                        getContext: "Get current patient context including medications, allergies, and conditions",
-                        discontinueMedication: "Discontinue an existing medication from patient records",
-                        addAllergy: "Add a new allergy to patient records"
-                    },
-                    mcpEnabled: true
+                // Test getContext
+                const context = this.mcpServer.getLocalContext();
+                this.addSystemMessage(`📋 Current context: ${context.totalMedications} medications, ${context.totalAllergies} allergies`);
+                
+                // Test adding a medication
+                const testMed = {
+                    name: "Test Aspirin",
+                    dose: "81mg",
+                    frequency: "once daily",
+                    indication: "Test medication"
                 };
                 
-                // Pass tools context directly to Ozwell
-                if (this.ozwell && this.ozwell.updateToolsContext) {
-                    this.ozwell.updateToolsContext(toolsContext);
-                    this.addSystemMessage('🔧 Tools context retrieved from MCP server and passed to Ozwell AI');
-                    console.log('*** Tools context successfully passed to Ozwell from MCP server ***');
-                } else {
-                    console.error('*** Ozwell not available or updateToolsContext method missing ***');
-                }
+                const result = await this.mcpServer.executeTool('addMedication', testMed);
+                this.addSystemMessage(`🧪 Test medication add result: ${JSON.stringify(result)}`);
+                
             } else {
-                console.warn('*** MCP server not available or getTools method missing ***');
-                this.addSystemMessage('⚠️ MCP server not available for tools context');
+                this.addSystemMessage('❌ MCP Server not initialized for direct testing');
             }
         } catch (error) {
-            console.error('Error getting tools context from MCP server:', error);
-            this.addSystemMessage('❌ Failed to get tools context from MCP server');
+            this.addSystemMessage(`❌ MCP Server direct test failed: ${error.message}`);
         }
-    }
-
-    // Pass available tools context to Ozwell via postMessage
-    passToolsContextToOzwell() {
-        // Request tools context from MCP server via postMessage
-        console.log('*** Requesting tools context from MCP server via postMessage ***');
-        window.postMessage({
-            type: 'request-tools-context'
-        }, '*');
     }
 
     // Method to manually refresh API connection
@@ -603,7 +604,8 @@ class MCPClient {
         const chatData = {
             timestamp: new Date().toISOString(),
             messages: this.chatHistory,
-            context: this.context
+            context: this.context,
+            availableTools: this.availableTools
         };
         
         const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
@@ -620,54 +622,252 @@ class MCPClient {
         this.addSystemMessage('📄 Chat exported successfully');
     }
 
-    // Method to handle errors gracefully
-    handleError(error, context = '') {
-        console.error(`Error in ${context}:`, error);
+    analyzeMessageForToolAction(message) {
+        const msg = message.toLowerCase().trim();
         
-        const errorMessage = error.message || 'Unknown error occurred';
-        this.addSystemMessage(`❌ Error${context ? ` in ${context}` : ''}: ${errorMessage}`);
-        
-        // If it's an API error, suggest checking configuration
-        if (errorMessage.includes('API') || errorMessage.includes('fetch') || errorMessage.includes('network')) {
-            this.addSystemMessage('💡 Tip: Check your API configuration or network connection');
-        }
-   }
-
-    // Test method to check available tools in Ozwell
-    testAvailableTools() {
-        console.log('*** Testing available tools in Ozwell ***');
-        
-        if (this.ozwell) {
-            // Check if Ozwell has a method to get available tools
-            if (this.ozwell.getAvailableTools) {
-                const tools = this.ozwell.getAvailableTools();
-                console.log('*** Tools from Ozwell.getAvailableTools():', tools);
-                this.addSystemMessage(`🔍 Tools from Ozwell: ${JSON.stringify(tools, null, 2)}`);
-            }
-            
-            // Check if there's a tools context stored
-            if (this.ozwell.toolsContext) {
-                console.log('*** Tools context in Ozwell:', this.ozwell.toolsContext);
-                this.addSystemMessage(`🔍 Ozwell tools context: ${JSON.stringify(this.ozwell.toolsContext, null, 2)}`);
-            }
-            
-            // Check if there are any tool-related properties
-            // console.log('*** Ozwell object properties:', Object.keys(this.ozwell));
-            // this.addSystemMessage(`🔍 Ozwell properties: ${Object.keys(this.ozwell).join(', ')}`);
-        } else {
-            this.addSystemMessage('❌ Ozwell not available for tools testing');
+        // Check for medication-related requests
+        if (this.isMedicationRequest(msg)) {
+            return this.extractMedicationAction(msg, message);
         }
         
-        // Also check MCP server tools
-        if (this.mcpServer && this.mcpServer.getTools) {
-            this.mcpServer.getTools().then(tools => {
-                console.log('*** MCP Server tools:', tools);
-                this.addSystemMessage(`🔍 MCP Server tools: ${JSON.stringify(tools, null, 2)}`);
-            }).catch(error => {
-                console.error('Error getting MCP tools:', error);
-            });
+        // Check for allergy-related requests
+        if (this.isAllergyRequest(msg)) {
+            return this.extractAllergyAction(msg, message);
         }
+        
+        // Check for context/information requests
+        if (this.isContextRequest(msg)) {
+            return {
+                toolName: 'getContext',
+                parameters: {},
+                description: 'Retrieving patient medical information'
+            };
+        }
+        
+        // Check for discontinue/stop medication requests
+        if (this.isDiscontinueRequest(msg)) {
+            return this.extractDiscontinueAction(msg, message);
+        }
+        
+        // Return null if no specific action is detected
+        return null;
     }
+
+    isMedicationRequest(msg) {
+        const addKeywords = ['add', 'prescribe', 'start', 'give', 'put on', 'begin', 'initiate'];
+        const medicationKeywords = ['medication', 'med', 'drug', 'prescription', 'pill', 'tablet', 'capsule'];
+        const specificMeds = ['aspirin', 'tylenol', 'ibuprofen', 'acetaminophen', 'paracetamol', 'lisinopril', 'metformin'];
+        
+        const hasAddKeyword = addKeywords.some(keyword => msg.includes(keyword));
+        const hasMedicationKeyword = medicationKeywords.some(keyword => msg.includes(keyword)) || 
+                                   specificMeds.some(med => msg.includes(med));
+        const hasDosePattern = /\d+\s*(mg|mcg|g|ml|cc|units?)/i.test(msg);
+        
+        return (hasAddKeyword && hasMedicationKeyword) || hasDosePattern;
+    }
+
+    isAllergyRequest(msg) {
+        const allergyKeywords = ['allergy', 'allergic', 'allergies', 'reaction', 'sensitive'];
+        const addKeywords = ['add', 'record', 'note', 'document'];
+        
+        return allergyKeywords.some(keyword => msg.includes(keyword)) && 
+               addKeywords.some(keyword => msg.includes(keyword));
+    }
+
+    isContextRequest(msg) {
+        const contextKeywords = ['show', 'display', 'list', 'what', 'current', 'status', 'information', 'summary', 'overview'];
+        const targetKeywords = ['medications', 'meds', 'allergies', 'patient', 'medical', 'history', 'conditions'];
+        
+        return contextKeywords.some(keyword => msg.includes(keyword)) && 
+               targetKeywords.some(keyword => msg.includes(keyword));
+    }
+
+    isDiscontinueRequest(msg) {
+        const stopKeywords = ['stop', 'discontinue', 'remove', 'delete', 'cancel', 'end', 'quit'];
+        const medicationKeywords = ['medication', 'med', 'drug', 'prescription'];
+        
+        return stopKeywords.some(keyword => msg.includes(keyword)) && 
+               medicationKeywords.some(keyword => msg.includes(keyword));
+    }
+
+    extractMedicationAction(msg, originalMessage) {
+        // Extract medication details from the message
+        const medicationData = this.extractMedicationDetails(originalMessage);
+        
+        if (medicationData.name) {
+            return {
+                toolName: 'addMedication',
+                parameters: medicationData,
+                description: `Adding medication: ${medicationData.name} ${medicationData.dose} ${medicationData.frequency}`
+            };
+        }
+        
+        // If we can't extract specific details, ask for clarification by getting context first
+        return {
+            toolName: 'getContext',
+            parameters: {},
+            description: 'Getting patient context to assist with medication request'
+        };
+    }
+
+    extractAllergyAction(msg, originalMessage) {
+        const allergyData = this.extractAllergyDetails(originalMessage);
+        
+        if (allergyData.allergen) {
+            return {
+                toolName: 'addAllergy',
+                parameters: allergyData,
+                description: `Adding allergy: ${allergyData.allergen}`
+            };
+        }
+        
+        return null;
+    }
+
+    extractDiscontinueAction(msg, originalMessage) {
+        // Extract medication name or ID to discontinue
+        const medicationId = this.extractMedicationName(originalMessage);
+        
+        if (medicationId) {
+            return {
+                toolName: 'discontinueMedication',
+                parameters: { medId: medicationId },
+                description: `Discontinuing medication: ${medicationId}`
+            };
+        }
+        
+        return null;
+    }
+
+    extractMedicationDetails(message) {
+        const details = {
+            name: '',
+            dose: '',
+            frequency: '',
+            indication: ''
+        };
+        
+        // Extract medication name (simple patterns)
+        const medicationPatterns = [
+            /(?:add|prescribe|start|give)\s+(\w+)/i,
+            /(aspirin|tylenol|ibuprofen|acetaminophen|paracetamol|lisinopril|metformin|dolo)/i,
+            /(\w+)\s+\d+\s*(?:mg|mcg|g|ml)/i
+        ];
+        
+        for (const pattern of medicationPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                details.name = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+                break;
+            }
+        }
+        
+        // Extract dose
+        const doseMatch = message.match(/(\d+\s*(?:mg|mcg|g|ml|cc|units?))/i);
+        if (doseMatch) {
+            details.dose = doseMatch[1];
+        }
+        
+        // Extract frequency
+        const frequencyPatterns = [
+            /(once\s+daily|twice\s+daily|three\s+times\s+daily|four\s+times\s+daily)/i,
+            /(daily|bid|tid|qid|q\d+h)/i,
+            /(every\s+\d+\s+hours?)/i,
+            /(as\s+needed|prn)/i
+        ];
+        
+        for (const pattern of frequencyPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                details.frequency = match[1];
+                break;
+            }
+        }
+        
+        // Extract indication/reason
+        const indicationPatterns = [
+            /for\s+(.+?)(?:\.|$)/i,
+            /to\s+treat\s+(.+?)(?:\.|$)/i,
+            /because\s+of\s+(.+?)(?:\.|$)/i
+        ];
+        
+        for (const pattern of indicationPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                details.indication = match[1].trim();
+                break;
+            }
+        }
+        
+        return details;
+    }
+
+    extractAllergyDetails(message) {
+        const details = {
+            allergen: '',
+            reaction: '',
+            severity: 'Moderate'
+        };
+        
+        // Extract allergen
+        const allergenPatterns = [
+            /allergic\s+to\s+(\w+)/i,
+            /allergy\s+to\s+(\w+)/i,
+            /add\s+allergy\s+(\w+)/i,
+            /(penicillin|sulfa|shellfish|nuts|peanuts|latex)/i
+        ];
+        
+        for (const pattern of allergenPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                details.allergen = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+                break;
+            }
+        }
+        
+        // Extract reaction type
+        const reactionPatterns = [
+            /causes?\s+(.+?)(?:\.|$)/i,
+            /reaction\s+is\s+(.+?)(?:\.|$)/i,
+            /(rash|hives|swelling|nausea|vomiting|difficulty breathing)/i
+        ];
+        
+        for (const pattern of reactionPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                details.reaction = match[1].trim();
+                break;
+            }
+        }
+        
+        // Extract severity
+        if (message.toLowerCase().includes('severe') || message.toLowerCase().includes('anaphylaxis')) {
+            details.severity = 'Severe';
+        } else if (message.toLowerCase().includes('mild') || message.toLowerCase().includes('minor')) {
+            details.severity = 'Mild';
+        }
+        
+        return details;
+    }
+
+    extractMedicationName(message) {
+        // Extract medication name for discontinuation
+        const patterns = [
+            /(?:stop|discontinue|remove)\s+(\w+)/i,
+            /(aspirin|tylenol|ibuprofen|acetaminophen|paracetamol|lisinopril|metformin)/i
+        ];
+        
+        for (const pattern of patterns) {
+            const match = message.match(pattern);
+            if (match) {
+                return match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+            }
+        }
+        
+        return null;
+    }
+
+    // ...existing code...
 }
 
 // Initialize when DOM is loaded
@@ -676,25 +876,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        // Ctrl+R to refresh connections
         if (e.ctrlKey && e.key === 'r') {
             e.preventDefault();
             window.mcpClient.refreshConnection();
         }
         
-        // Ctrl+L to clear chat
         if (e.ctrlKey && e.key === 'l') {
             e.preventDefault();
             window.mcpClient.clearChat();
         }
         
-        // Ctrl+E to export chat
         if (e.ctrlKey && e.key === 'e') {
             e.preventDefault();
             window.mcpClient.exportChat();
         }
         
-        // Ctrl+T to test available tools
         if (e.ctrlKey && e.key === 't') {
             e.preventDefault();
             window.mcpClient.testAvailableTools();

@@ -2,7 +2,11 @@
 class OzwellAgentSimulator {
     constructor() {
         this.iframe = null;
+        this.iframeContainer = null;
         this.isAgentActive = false;
+        this.isExpanded = false;
+        this.savedWidth = null;
+        this.savedHeight = null;
         this.agentUrl = 'http://localhost:5173/agent-iframe/'; // Adjust as needed
         
         // Initialize Ozwell API handler
@@ -180,10 +184,9 @@ class OzwellAgentSimulator {
 
         medicalDataManager.log("Creating agent iframe...");
 
-        // Create iframe element
-        this.iframe = document.createElement('iframe');
-        this.iframe.src = this.agentUrl;
-        this.iframe.style.cssText = `
+        // Create container for iframe with resize functionality
+        this.iframeContainer = document.createElement('div');
+        this.iframeContainer.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
@@ -194,45 +197,106 @@ class OzwellAgentSimulator {
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             z-index: 1000;
             background: white;
+            resize: both;
+            overflow: hidden;
+            min-width: 300px;
+            min-height: 400px;
+            max-width: 800px;
+            max-height: 900px;
         `;
 
-        // Add header with title and close button
+        // Create iframe element
+        this.iframe = document.createElement('iframe');
+        this.iframe.src = this.agentUrl;
+        this.iframe.style.cssText = `
+            width: 100%;
+            height: calc(100% - 40px);
+            border: none;
+            border-radius: 0 0 8px 8px;
+            background: white;
+            margin-top: 40px;
+        `;
+
+        // Add header with title, expand/collapse, and close button
         const header = document.createElement('div');
         header.style.cssText = `
             position: absolute;
-            top: -40px;
+            top: 0;
             left: 0;
             right: 0;
-            height: 30px;
+            height: 40px;
             background: #007bff;
             color: white;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 10px;
+            padding: 0 15px;
             border-radius: 8px 8px 0 0;
             font-weight: bold;
             z-index: 1001;
+            cursor: move;
+            user-select: none;
         `;
+        
         header.innerHTML = `
-            <span>Ozwell Medical AI</span>
-            <button onclick="window.ozwellAgent.closeAgent()" style="
-                background: none;
-                border: none;
-                color: white;
-                font-size: 18px;
-                cursor: pointer;
-                padding: 0;
-                width: 20px;
-                height: 20px;
-            ">×</button>
+            <span>🏥 Ozwell Medical AI</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="expandCollapseBtn" onclick="window.ozwellAgent.toggleExpanded()" style="
+                    background: none;
+                    border: none;
+                    color: white;
+                    font-size: 16px;
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    transition: background-color 0.2s;
+                " title="Expand/Collapse">⟐</button>
+                <button onclick="window.ozwellAgent.closeAgent()" style="
+                    background: none;
+                    border: none;
+                    color: white;
+                    font-size: 18px;
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    transition: background-color 0.2s;
+                " title="Close">×</button>
+            </div>
         `;
 
-        document.body.appendChild(header);
-        document.body.appendChild(this.iframe);
+        // Add resize handle in the bottom-right corner
+        const resizeHandle = document.createElement('div');
+        resizeHandle.style.cssText = `
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(-45deg, transparent 40%, #007bff 40%, #007bff 60%, transparent 60%);
+            cursor: nw-resize;
+            z-index: 1002;
+            border-radius: 0 0 8px 0;
+        `;
 
-        // Store reference to header for cleanup
+        // Assemble the structure
+        this.iframeContainer.appendChild(header);
+        this.iframeContainer.appendChild(this.iframe);
+        this.iframeContainer.appendChild(resizeHandle);
+        document.body.appendChild(this.iframeContainer);
+
+        // Store references for cleanup
         this.iframe._header = header;
+        this.iframe._container = this.iframeContainer;
+        this.iframe._resizeHandle = resizeHandle;
+
+        // Add drag functionality to header
+        this.makeDraggable(header, this.iframeContainer);
+        
+        // Add custom resize functionality
+        this.makeResizable(resizeHandle, this.iframeContainer);
+
+        // Add hover effects to buttons
+        this.addButtonHoverEffects(header);
 
         // Wait for iframe to load, then initialize
         this.iframe.onload = () => {
@@ -247,10 +311,149 @@ class OzwellAgentSimulator {
             if (this.iframe._header) {
                 this.iframe._header.remove();
             }
-            this.iframe.remove();
+            if (this.iframe._container) {
+                this.iframe._container.remove();
+            } else {
+                this.iframe.remove();
+            }
             this.iframe = null;
+            this.iframeContainer = null;
             this.isAgentActive = false;
+            this.isExpanded = false;
             medicalDataManager.log("Agent iframe closed");
+        }
+    }
+
+    // Make iframe draggable by header
+    makeDraggable(header, container) {
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return; // Don't drag when clicking buttons
+            
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+
+            if (e.target === header) {
+                isDragging = true;
+                header.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                e.preventDefault();
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+
+                xOffset = currentX;
+                yOffset = currentY;
+
+                // Keep within viewport bounds
+                const maxX = window.innerWidth - container.offsetWidth;
+                const maxY = window.innerHeight - container.offsetHeight;
+                
+                currentX = Math.max(0, Math.min(currentX, maxX));
+                currentY = Math.max(0, Math.min(currentY, maxY));
+
+                container.style.left = currentX + 'px';
+                container.style.top = currentY + 'px';
+                container.style.right = 'auto';
+                container.style.bottom = 'auto';
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                header.style.cursor = 'move';
+            }
+        });
+    }
+
+    // Make iframe resizable using custom resize handle
+    makeResizable(resizeHandle, container) {
+        let isResizing = false;
+        let startX, startY, startWidth, startHeight;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = parseInt(document.defaultView.getComputedStyle(container).width, 10);
+            startHeight = parseInt(document.defaultView.getComputedStyle(container).height, 10);
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            e.preventDefault();
+
+            const newWidth = startWidth + e.clientX - startX;
+            const newHeight = startHeight + e.clientY - startY;
+
+            // Apply constraints
+            const minWidth = 300;
+            const minHeight = 400;
+            const maxWidth = 800;
+            const maxHeight = 900;
+
+            const constrainedWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
+            const constrainedHeight = Math.max(minHeight, Math.min(newHeight, maxHeight));
+
+            container.style.width = constrainedWidth + 'px';
+            container.style.height = constrainedHeight + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+        });
+    }
+
+    // Add hover effects to header buttons
+    addButtonHoverEffects(header) {
+        const buttons = header.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.addEventListener('mouseenter', () => {
+                button.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+            });
+            button.addEventListener('mouseleave', () => {
+                button.style.backgroundColor = 'transparent';
+            });
+        });
+    }
+
+    // Toggle expanded/collapsed state
+    toggleExpanded() {
+        if (!this.iframeContainer) return;
+
+        this.isExpanded = !this.isExpanded;
+        const expandBtn = document.getElementById('expandCollapseBtn');
+        
+        if (this.isExpanded) {
+            // Save current size
+            this.savedWidth = this.iframeContainer.style.width;
+            this.savedHeight = this.iframeContainer.style.height;
+            
+            // Expand to larger size
+            this.iframeContainer.style.width = '800px';
+            this.iframeContainer.style.height = '900px';
+            expandBtn.innerHTML = '⟝';
+            expandBtn.title = 'Collapse';
+            medicalDataManager.log("Agent iframe expanded");
+        } else {
+            // Restore saved size or default
+            this.iframeContainer.style.width = this.savedWidth || '400px';
+            this.iframeContainer.style.height = this.savedHeight || '600px';
+            expandBtn.innerHTML = '⟐';
+            expandBtn.title = 'Expand';
+            medicalDataManager.log("Agent iframe collapsed");
         }
     }
 

@@ -59,16 +59,9 @@ PARAMS: {"name": "Paracetamol", "dose": "650mg", "frequency": "every 6-8 hours a
         } catch (error) {
             console.error('Ozwell API Error:', error);
             
-            // If this is a 400 error, it likely means the API endpoint is incorrect
-            // Set simulation mode for future calls to avoid repeated failures
-            // if (error.message.includes('400')) {
-            //     console.log('Setting simulation mode due to 400 error - API endpoint likely incorrect');
-            //     this.useSimulationMode = true;
-            // }
-            
             // Fallback to simulated response if API fails
-            // console.log('Falling back to simulated response...');
-            // return await this.simulateOzwellAPI(messages);
+            console.log('*** API failed, falling back to simulation mode ***');
+            return await this.simulateOzwellAPI(messages);
         }
     }
 
@@ -700,6 +693,7 @@ PARAMS: {"name": "Amoxicillin", "dose": "500mg", "frequency": "twice daily", "in
     // Update Ozwell with tools context
     updateToolsContext(toolsContext) {
         console.log('*** Ozwell received tools context ***', toolsContext);
+        console.log("availableTools:", toolsContext.availableTools);
         console.log('*** Tools available:', toolsContext.availableTools?.length || 0);
         
         this.toolsContext = toolsContext;
@@ -753,6 +747,7 @@ PARAMS: {"name": "Paracetamol", "dose": "650mg", "frequency": "every 6-8 hours a
         const success = toolResult.success;
         const data = toolResult.data;
         const error = toolResult.error;
+        const message = toolResult.message;
         
         switch (toolName) {
             case 'getContext':
@@ -774,8 +769,8 @@ PARAMS: {"name": "Paracetamol", "dose": "650mg", "frequency": "every 6-8 hours a
                     return `I've retrieved the patient's information:
 
 📋 **Patient Summary:**
-- Name: ${data.name || 'Not specified'}
-- Age: ${data.age || 'Not specified'} 
+- Name: ${data.patientInfo?.name || 'Not specified'}
+- Age: ${data.patientInfo?.age || 'Not specified'} 
 - Current Medications: ${data.medications && data.medications.length > 0 ? data.medications.map(m => `${m.name} ${m.dose}`).join(', ') : 'None'}
 - Allergies: ${data.allergies && data.allergies.length > 0 ? data.allergies.map(a => a.allergen).join(', ') : 'None'}
 
@@ -786,15 +781,17 @@ How can I assist you with this patient's care today?`;
                 
             case 'addMedication':
                 if (success) {
-                    const medName = originalContext?.parameters?.name || 'the medication';
-                    return `I have successfully added ${medName} to the patient's medication list. Please provide a brief confirmation and mention any important considerations like monitoring requirements, potential side effects, or drug interactions to watch for.`;
+                    const medName = data?.name || originalContext?.parameters?.name || 'the medication';
+                    const dose = data?.dose || '';
+                    const frequency = data?.frequency || '';
+                    return `I have successfully added ${medName} ${dose} ${frequency} to the patient's medication list. The medication has been recorded with ID ${data?.id || 'unknown'}. Please provide a brief confirmation and mention any important considerations like monitoring requirements, potential side effects, or drug interactions to watch for.`;
                 } else {
                     return `I was unable to add the medication due to: ${error}. Please acknowledge this issue and suggest alternative approaches or ask for clarification.`;
                 }
                 
             case 'discontinueMedication':
                 if (success) {
-                    const medName = originalContext?.parameters || 'the medication';
+                    const medName = data?.name || originalContext?.parameters || 'the medication';
                     return `I have successfully discontinued ${medName} from the patient's medication list. Please provide a brief confirmation and mention any important considerations like potential withdrawal effects or alternative treatments that might be needed.`;
                 } else {
                     return `I was unable to discontinue the medication due to: ${error}. Please acknowledge this issue and suggest how to proceed.`;
@@ -802,14 +799,18 @@ How can I assist you with this patient's care today?`;
                 
             case 'addAllergy':
                 if (success) {
-                    const allergen = originalContext?.parameters?.allergen || 'the allergen';
-                    return `I have successfully added the ${allergen} allergy to the patient's profile. Please provide a brief confirmation and mention the importance of avoiding this allergen and informing all healthcare providers.`;
+                    const allergen = data?.allergen || originalContext?.parameters?.allergen || 'the allergen';
+                    return `I have successfully added the ${allergen} allergy to the patient's profile with ${data?.severity || 'moderate'} severity. Please provide a brief confirmation and mention the importance of avoiding this allergen and informing all healthcare providers.`;
                 } else {
                     return `I was unable to add the allergy due to: ${error}. Please acknowledge this issue and explain the importance of manually documenting this allergy.`;
                 }
                 
             default:
-                return `The ${toolName} operation ${success ? 'completed successfully' : 'failed'}. Please provide an appropriate response based on this result.`;
+                if (success) {
+                    return `The ${toolName} operation completed successfully. ${message || 'The operation was completed.'}`;
+                } else {
+                    return `The ${toolName} operation failed due to: ${error}. Please provide an appropriate response based on this result.`;
+                }
         }
     }
 
