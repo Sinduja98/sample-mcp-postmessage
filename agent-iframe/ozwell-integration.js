@@ -1,13 +1,16 @@
 // Ozwell AI Integration for MCP Client - Updated for Real API
 class OzwellIntegration {
     constructor() {
-        this.apiKey = 'Add API key here'; // In production, this should be securely managed
+        this.apiKey = null; // Will be loaded from .env file
         this.baseUrl = 'https://ai.bluehive.com/api/v1/completion'; // Adjust to actual Ozwell API endpoint
         this.model = 'ozwell-medical-v1'; // Adjust to actual model name
         
         // Force simulation mode for now to ensure MCP tools work
         this.useSimulationMode = true;
         console.log('Ozwell Integration initialized in simulation mode for MCP tool compatibility');
+        
+        // Load environment variables
+        this.loadEnvironmentVariables();
         
         this.systemPrompt = `You are Ozwell, a medical AI assistant integrated with a medical practice management system. You have access to the following tools:
 
@@ -38,9 +41,89 @@ PARAMS: {"name": "Paracetamol", "dose": "650mg", "frequency": "every 6-8 hours a
 `;
     }
 
+    // Load environment variables from .env file
+    async loadEnvironmentVariables() {
+        try {
+            const response = await fetch('../.env');
+            if (!response.ok) {
+                console.warn('Could not load .env file, falling back to default configuration');
+                return;
+            }
+            
+            const envContent = await response.text();
+            const envVars = this.parseEnvFile(envContent);
+            
+            if (envVars.OZWELL_API_KEY) {
+                this.apiKey = envVars.OZWELL_API_KEY;
+                console.log('API key loaded from .env file');
+            } else {
+                console.warn('OZWELL_API_KEY not found in .env file');
+            }
+            
+            // Load other environment variables if needed
+            if (envVars.OZWELL_BASE_URL) {
+                this.baseUrl = envVars.OZWELL_BASE_URL;
+            }
+            if (envVars.OZWELL_MODEL) {
+                this.model = envVars.OZWELL_MODEL;
+            }
+            if (envVars.FORCE_SIMULATION_MODE === 'true') {
+                this.useSimulationMode = true;
+                console.log('Simulation mode forced by environment variable');
+            }
+            
+        } catch (error) {
+            console.error('Error loading environment variables:', error);
+            console.warn('Continuing without .env configuration');
+        }
+    }
+
+    // Parse .env file content
+    parseEnvFile(content) {
+        const envVars = {};
+        const lines = content.split('\n');
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            
+            // Skip empty lines and comments
+            if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
+                continue;
+            }
+            
+            // Parse KEY=VALUE or KEY='VALUE' or KEY="VALUE"
+            const match = trimmedLine.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/);
+            if (match) {
+                const [, key, value] = match;
+                
+                // Remove quotes if present
+                let cleanValue = value.trim();
+                if ((cleanValue.startsWith('"') && cleanValue.endsWith('"')) ||
+                    (cleanValue.startsWith("'") && cleanValue.endsWith("'"))) {
+                    cleanValue = cleanValue.slice(1, -1);
+                }
+                
+                envVars[key] = cleanValue;
+            }
+        }
+        
+        return envVars;
+    }
+
     async generateResponse(messages, onChunk = null) {
         console.log('*** generateResponse called with useSimulationMode:', this.useSimulationMode);
         console.log('*** Last message:', messages[messages.length - 1]?.content);
+        
+        // Ensure API key is loaded from .env if not already set
+        if (!this.apiKey) {
+            await this.loadEnvironmentVariables();
+        }
+        
+        // Check if we have an API key after loading
+        if (!this.apiKey && !this.useSimulationMode) {
+            console.warn('No API key available, falling back to simulation mode');
+            this.useSimulationMode = true;
+        }
         
         // If we've determined that simulation mode should be used, skip API call
         if (this.useSimulationMode) {
@@ -563,7 +646,8 @@ PARAMS: {}`;
         console.log('Ozwell configuration updated:', {
             hasApiKey: !!this.apiKey,
             baseUrl: this.baseUrl,
-            useSimulationMode: this.useSimulationMode
+            useSimulationMode: this.useSimulationMode,
+            apiKeySource: config.apiKey ? 'manual' : 'environment'
             // model: this.model
         });
     }
@@ -571,6 +655,15 @@ PARAMS: {}`;
     // Method to test API connectivity
     async testConnection() {
         try {
+            // Ensure API key is loaded
+            if (!this.apiKey) {
+                await this.loadEnvironmentVariables();
+            }
+            
+            if (!this.apiKey) {
+                throw new Error('No API key available. Please check your .env file.');
+            }
+            
             const testMessages = [
                 { role: 'user', content: 'Hello, please introduce yourself as a medical AI assistant.' }
             ];

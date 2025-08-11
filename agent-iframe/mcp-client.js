@@ -169,21 +169,11 @@ class MCPClient {
                     this.addSystemMessage('📋 Patient context loaded successfully');
                     break;
                     
-                case 'mcp-response':
-                    this.handleToolResponse(event.data);
-                    break;
-                    
                 case 'tools-context':
                     // Legacy support - convert to new format
                     if (event.data.toolsContext && event.data.toolsContext.availableTools) {
                         this.handleToolsReceived(event.data.toolsContext.availableTools);
                     }
-                    break;
-                    
-                case 'medication-response':
-                    // Handle medication response from parent
-                    this.addMessage(event.data.message, 'assistant');
-                    this.chatHistory.push({ role: 'assistant', content: event.data.message });
                     break;
                     
                 default:
@@ -281,13 +271,57 @@ class MCPClient {
                 // Execute the appropriate MCP tool
                 await this.executeToolViaMCP(toolAction.toolName, toolAction.parameters);
             } else {
-                // If no specific tool action is detected, get context to provide general assistance
-                console.log('*** No specific tool action detected, getting patient context for general assistance ***');
-                //wanted to call ozwell here
-             
+                // If no specific tool action is detected, invoke Ozwell for general assistance
 
+                // console.log('*** No specific tool action detected, getting patient context for general assistance ***');
+ 
                 // this.addSystemMessage('🔍 Getting patient context to assist you...');
                 // await this.executeToolViaMCP('getContext', {});
+                console.log('*** No specific tool action detected, invoking Ozwell for general assistance ***');
+                
+                this.addSystemMessage('🤖 Getting AI response...');
+                
+                try {
+                    // Prepare chat history for Ozwell
+                    const ozwellMessages = this.chatHistory.slice(); // Copy chat history
+                    
+                    // Update Ozwell with current tools context if available
+                    // if (this.availableTools && this.availableTools.length > 0) {
+                    //     const toolsContext = {
+                    //         availableTools: this.availableTools,
+                    //         currentContext: this.context,
+                    //         sourceLocation: 'mcp-client'
+                    //     };
+                    //     this.ozwell.updateToolsContext(toolsContext);
+                    // }
+                    
+                    // Generate response using Ozwell
+                    const ozwellResponse = await this.ozwell.generateResponse(ozwellMessages);
+                    
+                    // Check if Ozwell response contains tool calls
+                    const toolCalls = this.ozwell.parseToolCalls(ozwellResponse);
+                    
+                    if (toolCalls && toolCalls.length > 0) {
+                        console.log('*** Ozwell suggested tool calls:', toolCalls);
+                        
+                        // Execute the first tool call suggested by Ozwell
+                        const toolCall = toolCalls[0];
+                        this.addSystemMessage(`🔧 Ozwell suggests: ${toolCall.name}`);
+                        await this.executeToolViaMCP(toolCall.name, toolCall.parameters);
+                    } else {
+                        // No tool calls, just display Ozwell's response
+                        const formattedResponse = this.ozwell.formatResponse(ozwellResponse);
+                        this.addMessage(formattedResponse, 'assistant');
+                        this.chatHistory.push({ role: 'assistant', content: formattedResponse });
+                    }
+                    
+                } catch (ozwellError) {
+                    console.error('Error invoking Ozwell:', ozwellError);
+                    this.addSystemMessage('❌ AI response error, falling back to context retrieval...');
+                    
+                    // Fallback to getting context if Ozwell fails
+                    await this.executeToolViaMCP('getContext', {});
+                }
             }
         } catch (error) {
             console.error('Error in processMessage:', error);

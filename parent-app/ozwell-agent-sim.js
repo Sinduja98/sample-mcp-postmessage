@@ -15,6 +15,15 @@ class OzwellAgentSimulator {
         this.initializeUI();
         this.setupMessageListener();
         this.addOzwellConfiguration();
+        
+        // Wait for environment variables to load
+        this.initializeAsync();
+    }
+
+    async initializeAsync() {
+        // Wait for environment variables to be loaded
+        await this.ozwellHandler.loadEnvironmentVariables();
+        console.log('Ozwell API Handler initialized with environment variables');
     }
 
     initializeUI() {
@@ -572,9 +581,80 @@ class OzwellAgentSimulator {
 // Parent Window - Ozwell API Handler (Updated to work with existing structure)
 class OzwellAPIHandler {
     constructor() {
-        this.apiKey = 'Add API key here'; // In production, this should be securely managed
+        this.apiKey = null; // Will be loaded from .env file
         this.baseUrl = 'https://ai.bluehive.com/api/v1/completion';
         this.defaultModel = 'ozwell-medical-v1';
+        this.envLoaded = false;
+        
+        // Note: loadEnvironmentVariables() will be called from initializeAsync()
+    }
+
+    // Load environment variables from .env file
+    async loadEnvironmentVariables() {
+        try {
+            const response = await fetch('../.env');
+            if (!response.ok) {
+                console.warn('Could not load .env file, using fallback configuration');
+                this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk'; // fallback
+                return;
+            }
+            
+            const envContent = await response.text();
+            const envVars = this.parseEnvFile(envContent);
+            
+            if (envVars.OZWELL_API_KEY) {
+                this.apiKey = envVars.OZWELL_API_KEY;
+                console.log('API key loaded from .env file');
+            } else {
+                console.warn('OZWELL_API_KEY not found in .env file, using fallback');
+                this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk'; // fallback
+            }
+            
+            // Load other environment variables if available
+            if (envVars.OZWELL_BASE_URL) {
+                this.baseUrl = envVars.OZWELL_BASE_URL;
+            }
+            if (envVars.OZWELL_MODEL) {
+                this.defaultModel = envVars.OZWELL_MODEL;
+            }
+            
+        } catch (error) {
+            console.error('Error loading environment variables:', error);
+            console.warn('Using fallback configuration');
+            this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk'; // fallback
+        }
+    }
+
+    // Parse .env file content
+    parseEnvFile(content) {
+        const envVars = {};
+        const lines = content.split('\n');
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            
+            // Skip empty lines and comments
+            if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
+                continue;
+            }
+            
+            // Parse KEY=VALUE or KEY='VALUE' or KEY="VALUE"
+            const match = trimmedLine.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/);
+            if (match) {
+                const [, key, value] = match;
+                
+                // Remove quotes if present
+                let cleanValue = value.trim();
+                if ((cleanValue.startsWith('"') && cleanValue.endsWith('"')) ||
+                    (cleanValue.startsWith("'") && cleanValue.endsWith("'"))) {
+                    cleanValue = cleanValue.slice(1, -1);
+                }
+                
+                envVars[key] = cleanValue;
+            }
+        }
+        
+        return envVars;
     }
 
     handleConfiguration(config) {
