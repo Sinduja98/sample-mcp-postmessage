@@ -575,8 +575,23 @@ class MCPClient {
 
     async initializeMCP() {
         try {
-           this.mcpServer = await new MedicalMCPServer().initialize();
-          
+        //    this.mcpServer = await new MedicalMCPServer().initialize();
+            // Use the global MCP Server instance instead of creating a new one
+            // Wait for the global server to be ready
+            const waitForServer = () => {
+                return new Promise((resolve) => {
+                    const checkServer = () => {
+                        if (window.medicationServer) {
+                            resolve(window.medicationServer);
+                        } else {
+                            setTimeout(checkServer, 100);
+                        }
+                    };
+                    checkServer();
+                });
+            };
+            
+            this.mcpServer = await waitForServer();
             this.updateStatus('connected', 'Connected to medical system');
             
             this.addSystemMessage('🔗 Connected to medical system');

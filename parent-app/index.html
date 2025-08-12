@@ -345,7 +345,7 @@
         // Parent Window - Ozwell API Handler
         class OzwellAPIHandler {
             constructor() {
-                this.apiKey = 'BHSK-sandbox-GxuFjWNW1lSvP-t9XStZyLWxMBZGQF9dhCHzrIXk';
+              
                 this.baseUrl = 'https://ai.bluehive.com/api/v1/completion';
                 this.defaultModel = 'ozwell-medical-v1';
             }
@@ -796,52 +796,6 @@
                 medicalDataManager.log("Initial context sent to agent");
             }
 
-            async handleMCPRequest(data) {
-                medicalDataManager.log(`Received MCP request: ${data.method}`, data.params);
-
-                let result;
-                try {
-                    switch (data.method) {
-                        case 'getContext':
-                            result = getContext();
-                            break;
-                        case 'addMedication':
-                            result = addMedication(data.params);
-                            break;
-                        case 'discontinueMedication':
-                            result = discontinueMedication(data.params.medId || data.params);
-                            break;
-                        case 'editMedication':
-                            result = editMedication(data.params.medId, data.params.updates);
-                            break;
-                        case 'deleteMedication':
-                            result = deleteMedication(data.params.medId || data.params);
-                            break;
-                        case 'addAllergy':
-                            result = addAllergy(data.params);
-                            break;
-                        default:
-                            result = {
-                                success: false,
-                                error: `Unknown method: ${data.method}`
-                            };
-                    }
-                } catch (error) {
-                    result = {
-                        success: false,
-                        error: error.message
-                    };
-                }
-
-                // Send result back to iframe
-                if (this.iframe) {
-                    this.iframe.contentWindow.postMessage({
-                        type: 'mcp-response',
-                        requestId: data.requestId,
-                        result: result
-                    }, '*');
-                }
-            }
 
             runSimulation() {
                 medicalDataManager.log("Starting Ozwell AI agent...");
