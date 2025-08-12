@@ -7,6 +7,7 @@ class MCPClient {
         this.mcpServer = null;
         this.context = null;
         this.availableTools = [];
+        this._processingMessage = false;
         
         this.initializeUI();
         this.configureOzwell(); // Keep for potential future use
@@ -150,6 +151,11 @@ class MCPClient {
     setupMessageListener() {
         window.addEventListener('message', (event) => {
             console.log('MCPClient received message:', event.data);
+
+            // FILTER: Ignore messages that MCPClient sent
+            if (event.data.type === 'mcp-execute-tool' || event.data.type === 'mcp-get-tools') {
+                return; // These are sent BY MCPClient, not TO MCPClient
+            }
             
             switch (event.data.type) {
                 case 'mcp-tools-available':
@@ -169,11 +175,21 @@ class MCPClient {
                     this.addSystemMessage('📋 Patient context loaded successfully');
                     break;
                     
+                case 'mcp-response':
+                    this.handleToolResponse(event.data);
+                    break;
+                    
                 case 'tools-context':
                     // Legacy support - convert to new format
                     if (event.data.toolsContext && event.data.toolsContext.availableTools) {
                         this.handleToolsReceived(event.data.toolsContext.availableTools);
                     }
+                    break;
+                    
+                case 'medication-response':
+                    // Handle medication response from parent
+                    this.addMessage(event.data.message, 'assistant');
+                    this.chatHistory.push({ role: 'assistant', content: event.data.message });
                     break;
                     
                 default:
@@ -259,6 +275,13 @@ class MCPClient {
 
     async processMessage(message) {
         console.log('*** processMessage called with:', message);
+
+     if (this._processingMessage) {
+        console.log('*** Already processing a message, skipping duplicate');
+        return;
+    }
+    
+    this._processingMessage = true;
         
         try {
             // Analyze user message to determine appropriate MCP tool action
@@ -273,10 +296,7 @@ class MCPClient {
             } else {
                 // If no specific tool action is detected, invoke Ozwell for general assistance
 
-                // console.log('*** No specific tool action detected, getting patient context for general assistance ***');
- 
-                // this.addSystemMessage('🔍 Getting patient context to assist you...');
-                // await this.executeToolViaMCP('getContext', {});
+                
                 console.log('*** No specific tool action detected, invoking Ozwell for general assistance ***');
                 
                 this.addSystemMessage('🤖 Getting AI response...');
@@ -326,7 +346,10 @@ class MCPClient {
         } catch (error) {
             console.error('Error in processMessage:', error);
             throw error;
-        }
+        } finally {
+        // Reset the processing flag
+        this._processingMessage = false;
+    }
     }
 
     async executeToolViaMCP(toolName, parameters) {
@@ -552,7 +575,8 @@ class MCPClient {
 
     async initializeMCP() {
         try {
-            this.mcpServer = await new MedicalMCPServer().initialize();
+           this.mcpServer = await new MedicalMCPServer().initialize();
+          
             this.updateStatus('connected', 'Connected to medical system');
             
             this.addSystemMessage('🔗 Connected to medical system');

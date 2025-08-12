@@ -682,13 +682,11 @@
                 window.addEventListener('message', async (event) => {
                     console.log("Received message:", event.data);
                     
-                    // Handle MCP requests (existing functionality)
-                    if (event.data.type === 'mcp-request') {
-                        await this.handleMCPRequest(event.data);
-                    }
+                    // NOTE: MCP requests are now handled by medical-data.js MedicalDataManager
+                    // Removed duplicate MCP request handler to prevent duplicate responses
                     
                     // Handle Ozwell API requests (new functionality)
-                    else if (event.data.type === 'ozwell-request') {
+                    if (event.data.type === 'ozwell-request') {
                         await this.ozwellHandler.handleOzwellRequest(event);
                     }
                     

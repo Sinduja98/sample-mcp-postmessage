@@ -53,6 +53,7 @@ class MedicalMCPServer {
         };
         
         this.setupTools();
+        this.setupEventListeners();
         this.requestCounter = 0;
         
         // Store available tools definition
@@ -96,39 +97,75 @@ class MedicalMCPServer {
         });
 
         // Register tool call handler
-        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            const { name, arguments: args } = request.params;
+        // this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        //     const { name, arguments: args } = request.params;
             
-            try {
-                switch (name) {
-                    case "addMedication":
-                        return await this.executeAddMedication(args);
-                    case "editMedication":
-                        return await this.executeEditMedication(args);
-                    case "getContext":
-                        return await this.executeGetContext(args);
-                    case "discontinueMedication":
-                        return await this.executeDiscontinueMedication(args);
-                    case "addAllergy":
-                        return await this.executeAddAllergy(args);
-                    default:
-                        throw new Error(`Unknown tool: ${name}`);
-                }
-            } catch (error) {
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text: `Error executing ${name}: ${error.message}`
-                        }
-                    ],
-                    isError: true
-                };
+        //     try {
+        //         switch (name) {
+        //             case "addMedication":
+        //                 return await this.executeAddMedication(args);
+        //             case "editMedication":
+        //                 return await this.executeEditMedication(args);
+        //             case "getContext":
+        //                 return await this.executeGetContext(args);
+        //             case "discontinueMedication":
+        //                 return await this.executeDiscontinueMedication(args);
+        //             case "addAllergy":
+        //                 return await this.executeAddAllergy(args);
+        //             default:
+        //                 throw new Error(`Unknown tool: ${name}`);
+        //         }
+        //     } catch (error) {
+        //         return {
+        //             content: [
+        //                 {
+        //                     type: "text",
+        //                     text: `Error executing ${name}: ${error.message}`
+        //                 }
+        //             ],
+        //             isError: true
+        //         };
+        //     }
+        // });
+    }
+
+    setupEventListeners() {
+        // Setup message listener for requests from MCP Client (Ozwell iframe)
+        window.addEventListener('message', (event) => {
+            console.log('MCP Server received message:', event.data);
+
+            // FILTER: Ignore messages that MCP Server sent
+            if (event.data.type === 'mcp-tool-response' || event.data.type === 'mcp-tools-available') {
+                return; // These are sent BY MCP Server, not TO MCP Server
+            }
+            
+            switch (event.data.type) {
+                case 'mcp-get-tools':
+                    // Send available tools to MCP Client
+                    this.sendAvailableTools();
+                    break;
+                    
+                case 'mcp-execute-tool':
+                    // Execute tool requested by MCP Client
+                    const { requestId, toolName, parameters } = event.data;
+                    this.handleToolExecution(toolName, parameters, requestId);
+                    break;
+                    
+                case 'request-tools-context':
+                    // Respond with available tools
+                    event.source.postMessage({
+                        type: 'tools-context',
+                        tools: this.getTools()
+                    }, '*');
+                    break;
+                    
+                default:
+                    console.log('MCP Server: Unknown message type:', event.data.type);
             }
         });
     }
 
-    async executeAddMedication(args) {
+    async executeAddMedication(args, requestId = null) {
         console.log('MCP Server: executing addMedication with:', args);
         
         try {
@@ -179,7 +216,7 @@ class MedicalMCPServer {
                 success: true,
                 data: newMed,
                 message: successMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -198,7 +235,7 @@ class MedicalMCPServer {
             this.sendToolResponse('addMedication', {
                 success: false,
                 error: errorMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -212,7 +249,7 @@ class MedicalMCPServer {
         }
     }
 
-    async executeEditMedication(args) {
+    async executeEditMedication(args, requestId = null) {
         console.log('MCP Server: executing editMedication with:', args);
         
         try {
@@ -238,7 +275,7 @@ class MedicalMCPServer {
                 success: true,
                 data: updatedMed,
                 message: successMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -256,7 +293,7 @@ class MedicalMCPServer {
             this.sendToolResponse('editMedication', {
                 success: false,
                 error: errorMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -270,7 +307,7 @@ class MedicalMCPServer {
         }
     }
 
-    async executeGetContext(args) {
+    async executeGetContext(args, requestId = null) {
         console.log('MCP Server: executing getContext');
         
         try {
@@ -280,7 +317,7 @@ class MedicalMCPServer {
                 success: true,
                 data: context,
                 message: 'Context retrieved successfully'
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -298,7 +335,7 @@ class MedicalMCPServer {
             this.sendToolResponse('getContext', {
                 success: false,
                 error: errorMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -312,7 +349,7 @@ class MedicalMCPServer {
         }
     }
 
-    async executeDiscontinueMedication(args) {
+    async executeDiscontinueMedication(args, requestId = null) {
         console.log('MCP Server: executing discontinueMedication with:', args);
         
         try {
@@ -336,7 +373,7 @@ class MedicalMCPServer {
                 success: true,
                 data: discontinuedMed,
                 message: successMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -354,7 +391,7 @@ class MedicalMCPServer {
             this.sendToolResponse('discontinueMedication', {
                 success: false,
                 error: errorMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -368,7 +405,7 @@ class MedicalMCPServer {
         }
     }
 
-    async executeAddAllergy(args) {
+    async executeAddAllergy(args, requestId = null) {
         console.log('MCP Server: executing addAllergy with:', args);
         
         try {
@@ -399,7 +436,7 @@ class MedicalMCPServer {
                 success: true,
                 data: newAllergy,
                 message: successMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -417,7 +454,7 @@ class MedicalMCPServer {
             this.sendToolResponse('addAllergy', {
                 success: false,
                 error: errorMessage
-            });
+            }, requestId);
             
             return {
                 content: [
@@ -491,35 +528,6 @@ class MedicalMCPServer {
 
     async initialize() {
         console.log('Initializing Medical MCP Server...');
-        
-        // Setup message listener for requests from MCP Client (Ozwell iframe)
-        window.addEventListener('message', (event) => {
-            console.log('MCP Server received message:', event.data);
-            
-            switch (event.data.type) {
-                case 'mcp-get-tools':
-                    // Send available tools to MCP Client
-                    this.sendAvailableTools();
-                    break;
-                    
-                case 'mcp-execute-tool':
-                    // Execute tool requested by MCP Client
-                    const { requestId, toolName, parameters } = event.data;
-                    this.handleToolExecution(toolName, parameters, requestId);
-                    break;
-                    
-                case 'request-tools-context':
-                    // Respond with available tools
-                    event.source.postMessage({
-                        type: 'tools-context',
-                        tools: this.getTools()
-                    }, '*');
-                    break;
-                    
-                default:
-                    console.log('MCP Server: Unknown message type:', event.data.type);
-            }
-        });
         
         // Initialize with some default data for testing
         this.localMedications = [
@@ -610,34 +618,36 @@ class MedicalMCPServer {
             
             switch (toolName) {
                 case "addMedication":
-                    result = await this.executeAddMedication(parameters);
+                    result = await this.executeAddMedication(parameters, requestId);
                     break;
                 case "editMedication":
-                    result = await this.executeEditMedication(parameters);
+                    result = await this.executeEditMedication(parameters, requestId);
                     break;
                 case "getContext":
-                    result = await this.executeGetContext(parameters);
+                    result = await this.executeGetContext(parameters, requestId);
                     break;
                 case "discontinueMedication":
-                    result = await this.executeDiscontinueMedication(parameters);
+                    result = await this.executeDiscontinueMedication(parameters, requestId);
                     break;
                 case "addAllergy":
-                    result = await this.executeAddAllergy(parameters);
+                    result = await this.executeAddAllergy(parameters, requestId);
                     break;
                 default:
+                    // Only for unknown tools, send error response
+                    this.sendToolResponse(toolName, {
+                        success: false,
+                        error: `Unknown tool: ${toolName}`
+                    }, requestId);
                     throw new Error(`Unknown tool: ${toolName}`);
             }
             
-            // Note: sendToolResponse is already called within each execute method
-            // so we don't need to call it again here
+            // Individual execute methods handle their own responses
+            // and include the requestId for proper response tracking
             
         } catch (error) {
             console.error(`Error executing tool ${toolName}:`, error);
-            
-            this.sendToolResponse(toolName, {
-                success: false,
-                error: error.message
-            }, requestId);
+            // Error responses are handled by individual execute methods
+            // This catch mainly handles the unknown tool case above
         }
     }
 }
