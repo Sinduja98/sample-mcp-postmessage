@@ -19,9 +19,7 @@ class MCPClient {
             document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => this.requestToolsFromMCPServer(), 100);
             });
-        } else {
-            setTimeout(() => this.requestToolsFromMCPServer(), 100);
-        }
+        } 
     }
 
     configureOzwell() {
@@ -108,25 +106,6 @@ class MCPClient {
             if (e.key === 'Enter') this.sendMessage();
         });
     }
-
-    // addConfigButton() {
-    //     // Add a configuration button to the UI
-    //     const configButton = document.createElement('button');
-    //     configButton.textContent = '⚙️ Configure API';
-    //     configButton.style.cssText = `
-    //         position: absolute;
-    //         top: 10px;
-    //         right: 10px;
-    //         padding: 5px 10px;
-    //         background: #f0f0f0;
-    //         border: 1px solid #ccc;
-    //         border-radius: 4px;
-    //         cursor: pointer;
-    //     `;
-        
-    //     configButton.addEventListener('click', () => this.showConfigDialog());
-    //     document.body.appendChild(configButton);
-    // }
 
     showConfigDialog() {
         // Simple config dialog - you might want to make this more sophisticated
@@ -598,7 +577,7 @@ class MCPClient {
             this.addSystemMessage('💬 I can help you with medical tasks like adding medications, managing allergies, and viewing patient information. Just tell me what you need!');
             
             // Request tools from MCP server
-            this.requestToolsFromMCPServer();
+            // this.requestToolsFromMCPServer();
             
         } catch (error) {
             console.error('Failed to initialize MCP:', error);
