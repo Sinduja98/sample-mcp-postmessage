@@ -1,6 +1,7 @@
 // MCP Client - Updated to use MCP Tools directly instead of Ozwell responses
 class MCPClient {
     constructor() {
+        this.llmManager = new LLMManager();
         this.ozwell = new OzwellIntegration(); // Used for message analysis, not response generation
         this.chatHistory = [];
         this.requestCounter = 0;
@@ -10,6 +11,7 @@ class MCPClient {
         this._processingMessage = false;
         
         this.initializeUI();
+        this.initializeLLMDropdown();
         this.configureOzwell(); // Keep for potential future use
         this.initializeMCP();
         this.setupMessageListener();
@@ -98,8 +100,256 @@ class MCPClient {
         this.userInput = document.getElementById('userInput');
         this.sendButton = document.getElementById('sendButton');
         
-        // Add API key configuration button
-        // this.addConfigButton();
+        this.sendButton.addEventListener('click', () => this.sendMessage());
+        this.userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendMessage();
+        });
+    }
+
+    initializeLLMDropdown() {
+        this.llmDropdown = document.getElementById('llmDropdown');
+        this.configureButton = document.getElementById('configureButton');
+
+        // Set up event listeners
+        this.llmDropdown.addEventListener('change', (e) => {
+            this.handleLLMSelection(e.target.value);
+        });
+
+        this.configureButton.addEventListener('click', () => {
+            this.showConfigurationModal(this.llmDropdown.value);
+        });
+
+        // Load saved selection
+        const currentProvider = this.llmManager.getCurrentProvider();
+        if (currentProvider) {
+            this.llmDropdown.value = currentProvider;
+            this.configureButton.style.display = 'inline-block';
+            this.updateStatusForProvider(currentProvider);
+        }
+    }
+
+    handleLLMSelection(provider) {
+        if (!provider) {
+            this.configureButton.style.display = 'none';
+            this.updateStatus('warning', 'No AI model selected');
+            return;
+        }
+
+        this.configureButton.style.display = 'inline-block';
+
+        // Check if provider is already configured
+        if (this.llmManager.isProviderConfigured(provider)) {
+            this.llmManager.setCurrentProvider(provider);
+            this.updateStatusForProvider(provider);
+            this.testCurrentConnection();
+        } else {
+            // Show configuration modal immediately
+            this.showConfigurationModal(provider);
+        }
+    }
+
+    showConfigurationModal(provider) {
+        const providerName = this.llmManager.getProviderName(provider);
+        const fields = this.llmManager.getConfigurationFields(provider);
+        const currentConfig = this.llmManager.getProviderConfig(provider);
+
+        // Create modal HTML
+        const modalHTML = `
+            <div class="config-modal" id="configModal">
+                <div class="config-modal-content">
+                    <h3>Configure ${providerName}</h3>
+                    <form id="configForm">
+                        ${fields.map(field => `
+                            <div class="config-form-group">
+                                <label for="${field.name}">${field.label}:</label>
+                                <input 
+                                    type="${field.type}" 
+                                    id="${field.name}" 
+                                    name="${field.name}"
+                                    placeholder="${field.placeholder}"
+                                    value="${currentConfig[field.name] || ''}"
+                                    required
+                                />
+                            </div>
+                        `).join('')}
+                    </form>
+                    <div class="config-buttons">
+                        <button type="button" class="cancel-btn" onclick="mcpClient.closeConfigurationModal()">Cancel</button>
+                        <button type="button" class="save-btn" onclick="mcpClient.saveConfiguration('${provider}')">Save & Test</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    closeConfigurationModal() {
+        const modal = document.getElementById('configModal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    async saveConfiguration(provider) {
+        const form = document.getElementById('configForm');
+        const formData = new FormData(form);
+        const config = {};
+
+        // Extract form data
+        for (const [key, value] of formData.entries()) {
+            config[key] = value.trim();
+        }
+
+        // Validate required fields
+        const fields = this.llmManager.getConfigurationFields(provider);
+        for (const field of fields) {
+            if (!config[field.name]) {
+                alert(`${field.label} is required`);
+                return;
+            }
+        }
+
+        try {
+            // Save configuration
+            this.llmManager.saveConfiguration(provider, config);
+            this.llmManager.setCurrentProvider(provider);
+
+            // Update UI
+            this.updateStatus('connecting', `Testing ${this.llmManager.getProviderName(provider)} connection...`);
+            
+            // Test connection
+            const testResult = await this.llmManager.testConnection();
+            
+            if (testResult.success) {
+                this.updateStatus('connected', `${this.llmManager.getProviderName(provider)} connected`);
+                this.addSystemMessage(`✅ Successfully connected to ${this.llmManager.getProviderName(provider)}`);
+            } else {
+                this.updateStatus('error', 'Connection failed');
+                this.addSystemMessage(`❌ Failed to connect to ${this.llmManager.getProviderName(provider)}: ${testResult.error}`);
+            }
+
+            // Close modal
+            this.closeConfigurationModal();
+
+        } catch (error) {
+            console.error('Configuration error:', error);
+            alert(`Configuration failed: ${error.message}`);
+        }
+    }
+
+    updateStatusForProvider(provider) {
+        const providerName = this.llmManager.getProviderName(provider);
+        this.updateStatus('connected', `${providerName} ready`);
+    }
+
+    async testCurrentConnection() {
+        const currentProvider = this.llmManager.getCurrentProvider();
+        if (!currentProvider) return;
+
+        this.updateStatus('connecting', 'Testing connection...');
+        
+        try {
+            const result = await this.llmManager.testConnection();
+            if (result.success) {
+                this.updateStatusForProvider(currentProvider);
+                this.addSystemMessage(`✅ Connection test successful`);
+            } else {
+                this.updateStatus('error', 'Connection failed');
+                this.addSystemMessage(`❌ Connection test failed: ${result.error}`);
+            }
+        } catch (error) {
+            this.updateStatus('error', 'Connection error');
+            this.addSystemMessage(`❌ Connection error: ${error.message}`);
+        }
+    }
+
+    // Modified processMessage to use LLM Manager instead of Ozwell directly
+    async generateLLMResponse(messages) {
+        const currentProvider = this.llmManager.getCurrentProvider();
+        if (!currentProvider) {
+            throw new Error('No LLM provider selected. Please select and configure an AI model.');
+        }
+
+        return await this.llmManager.generateResponse(messages);
+    }
+
+    configureOzwell() {
+        // Configure Ozwell API credentials
+        // You can set these via environment variables, config file, or user input
+        const config = {
+            apiKey: this.getApiKey(), // Implement this method to securely get API key
+            baseUrl: 'https://ai.bluehive.com/api/v1/completion', // Update with actual endpoint
+            model: 'ozwell-medical-v1' // Update with actual model name
+        };
+        
+        this.ozwell.configure(config);
+        
+        // Test the connection
+        this.testOzwellConnection();
+    }
+
+    getApiKey() {
+        // Priority order for getting API key:
+        // 1. Environment variable (if available in your environment)
+        // 2. Local storage (be careful with security)
+        // 3. User input prompt
+        // 4. Configuration file
+        
+        // Option 1: From environment (Node.js style - may not work in browser)
+        if (typeof process !== 'undefined' && process.env && process.env.OZWELL_API_KEY) {
+            return process.env.OZWELL_API_KEY;
+        }
+        
+        // Option 2: From local storage (use with caution)
+        const storedKey = localStorage.getItem('ozwell_api_key');
+        if (storedKey) {
+            return storedKey;
+        }
+        
+        // Option 3: Prompt user (you might want to do this in a modal instead)
+        const userKey = this.promptForApiKey();
+        if (userKey) {
+            // Optionally store it (be careful about security)
+            localStorage.setItem('ozwell_api_key', userKey);
+            return userKey;
+        }
+        
+        // Option 4: Return empty string to fall back to simulation
+        console.warn('No Ozwell API key found, will fall back to simulation mode');
+        return '';
+    }
+
+    promptForApiKey() {
+        // You might want to replace this with a proper modal dialog
+        const key = prompt('Please enter your Ozwell API key (or leave empty to use simulation mode):');
+        return key ? key.trim() : '';
+    }
+
+    async testOzwellConnection() {
+        try {
+            this.updateStatus('connecting', 'Testing Ozwell API connection...');
+            const result = await this.ozwell.testConnection();
+            
+            if (result.success) {
+                this.addSystemMessage('✅ Connected to Ozwell AI successfully');
+                this.updateStatus('connected', 'Ozwell AI connected');
+            } else {
+                this.addSystemMessage('⚠️ Ozwell API connection failed, using simulation mode');
+                this.updateStatus('warning', 'Using simulation mode');
+            }
+        } catch (error) {
+            console.error('Ozwell connection test error:', error);
+            this.addSystemMessage('⚠️ Ozwell API not available, using simulation mode');
+            this.updateStatus('warning', 'Using simulation mode');
+        }
+    }
+
+    initializeUI() {
+        this.chatContainer = document.getElementById('chatContainer');
+        this.userInput = document.getElementById('userInput');
+        this.sendButton = document.getElementById('sendButton');
         
         this.sendButton.addEventListener('click', () => this.sendMessage());
         this.userInput.addEventListener('keypress', (e) => {
@@ -107,7 +357,169 @@ class MCPClient {
         });
     }
 
-    showConfigDialog() {
+    initializeLLMDropdown() {
+        this.llmDropdown = document.getElementById('llmDropdown');
+        this.configureButton = document.getElementById('configureButton');
+
+        // Set up event listeners
+        this.llmDropdown.addEventListener('change', (e) => {
+            this.handleLLMSelection(e.target.value);
+        });
+
+        this.configureButton.addEventListener('click', () => {
+            this.showConfigurationModal(this.llmDropdown.value);
+        });
+
+        // Load saved selection
+        const currentProvider = this.llmManager.getCurrentProvider();
+        if (currentProvider) {
+            this.llmDropdown.value = currentProvider;
+            this.configureButton.style.display = 'inline-block';
+            this.updateStatusForProvider(currentProvider);
+        }
+    }
+
+    handleLLMSelection(provider) {
+        if (!provider) {
+            this.configureButton.style.display = 'none';
+            this.updateStatus('warning', 'No AI model selected');
+            return;
+        }
+
+        this.configureButton.style.display = 'inline-block';
+
+        // Check if provider is already configured
+        if (this.llmManager.isProviderConfigured(provider)) {
+            this.llmManager.setCurrentProvider(provider);
+            this.updateStatusForProvider(provider);
+            this.testCurrentConnection();
+        } else {
+            // Show configuration modal immediately
+            this.showConfigurationModal(provider);
+        }
+    }
+
+    showConfigurationModal(provider) {
+        const providerName = this.llmManager.getProviderName(provider);
+        const fields = this.llmManager.getConfigurationFields(provider);
+        const currentConfig = this.llmManager.getProviderConfig(provider);
+
+        // Create modal HTML
+        const modalHTML = `
+            <div class="config-modal" id="configModal">
+                <div class="config-modal-content">
+                    <h3>Configure ${providerName}</h3>
+                    <form id="configForm">
+                        ${fields.map(field => `
+                            <div class="config-form-group">
+                                <label for="${field.name}">${field.label}:</label>
+                                <input 
+                                    type="${field.type}" 
+                                    id="${field.name}" 
+                                    name="${field.name}"
+                                    placeholder="${field.placeholder}"
+                                    value="${currentConfig[field.name] || ''}"
+                                    required
+                                />
+                            </div>
+                        `).join('')}
+                    </form>
+                    <div class="config-buttons">
+                        <button type="button" class="cancel-btn" onclick="mcpClient.closeConfigurationModal()">Cancel</button>
+                        <button type="button" class="save-btn" onclick="mcpClient.saveConfiguration('${provider}')">Save & Test</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    closeConfigurationModal() {
+        const modal = document.getElementById('configModal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    // async saveConfiguration(provider) {
+    //     const form = document.getElementById('configForm');
+    //     const formData = new FormData(form);
+    //     const config = {};
+
+    //     // Extract form data
+    //     for (const [key, value] of formData.entries()) {
+    //         config[key] = value.trim();
+    //     }
+
+    //     // Validate required fields
+    //     const fields = this.llmManager.getConfigurationFields(provider);
+    //     for (const field of fields) {
+    //         if (!config[field.name]) {
+    //             alert(`${field.label} is required`);
+    //             return;
+    //         }
+    //     }
+
+    //     try {
+    //         // Save configuration
+    //         this.llmManager.saveConfiguration(provider, config);
+    //         this.llmManager.setCurrentProvider(provider);
+
+    //         // Update UI
+    //         this.updateStatus('connecting', `Testing ${this.llmManager.getProviderName(provider)} connection...`);
+            
+    //         // Test connection
+    //         const testResult = await this.llmManager.testConnection();
+            
+    //         if (testResult.success) {
+    //             this.updateStatus('connected', `${this.llmManager.getProviderName(provider)} connected`);
+    //             this.addSystemMessage(`✅ Successfully connected to ${this.llmManager.getProviderName(provider)}`);
+    //         } else {
+    //             this.updateStatus('error', 'Connection failed');
+    //             this.addSystemMessage(`❌ Failed to connect to ${this.llmManager.getProviderName(provider)}: ${testResult.error}`);
+    //         }
+
+    //         // Close modal
+    //         this.closeConfigurationModal();
+
+    //     } catch (error) {
+    //         console.error('Configuration error:', error);
+    //         alert(`Configuration failed: ${error.message}`);
+    //     }
+    // }
+
+    updateStatusForProvider(provider) {
+        const providerName = this.llmManager.getProviderName(provider);
+        this.updateStatus('connected', `${providerName} ready`);
+    }
+
+    async testCurrentConnection() {
+        const currentProvider = this.llmManager.getCurrentProvider();
+        if (!currentProvider) return;
+
+        this.updateStatus('connecting', 'Testing connection...');
+        
+        try {
+            const result = await this.llmManager.testConnection();
+            if (result.success) {
+                this.updateStatusForProvider(currentProvider);
+                this.addSystemMessage(`✅ Connection test successful`);
+            } else {
+                this.updateStatus('error', 'Connection failed');
+                this.addSystemMessage(`❌ Connection test failed: ${result.error}`);
+            }
+        } catch (error) {
+            this.updateStatus('error', 'Connection error');
+            this.addSystemMessage(`❌ Connection error: ${error.message}`);
+        }
+    }
+
+    // this.addConfigButton();
+
+
+showConfigDialog() {
         // Simple config dialog - you might want to make this more sophisticated
         const currentKey = localStorage.getItem('ozwell_api_key') || '';
         const newKey = prompt('Enter Ozwell API Key:', currentKey);
@@ -266,60 +678,85 @@ class MCPClient {
             // Analyze user message to determine appropriate MCP tool action
             const toolAction = this.analyzeMessageForToolAction(message);
             
-            if (toolAction) {
-                console.log('*** Determined tool action:', toolAction);
-                this.addSystemMessage(`🔧 Analyzing request: ${toolAction.description}`);
+            // if (toolAction) {
+            //     console.log('*** Determined tool action:', toolAction);
+            //     this.addSystemMessage(`🔧 Analyzing request: ${toolAction.description}`);
                 
-                // Execute the appropriate MCP tool
-                await this.executeToolViaMCP(toolAction.toolName, toolAction.parameters);
-            } else {
+            //     // Execute the appropriate MCP tool
+            //     await this.executeToolViaMCP(toolAction.toolName, toolAction.parameters);
+            // } 
+            {
                 // If no specific tool action is detected, invoke Ozwell for general assistance
 
                 
-                console.log('*** No specific tool action detected, invoking Ozwell for general assistance ***');
+                // console.log('*** No specific tool action detected, invoking Ozwell for general assistance ***');
                 
                 this.addSystemMessage('🤖 Getting AI response...');
                 
                 try {
-                    // Prepare chat history for Ozwell
-                    const ozwellMessages = this.chatHistory.slice(); // Copy chat history
+                    // Check if an LLM provider is selected
+                    const currentProvider = this.llmManager.getCurrentProvider();
+                    if (!currentProvider) {
+                        this.addMessage('❌ No AI model selected. Please select and configure an AI model from the dropdown above.', 'assistant');
+                        return;
+                    }
+
+                    // Prepare chat history for selected LLM
+                    const llmMessages = this.chatHistory.slice(); // Copy chat history
                     
-                    // Update Ozwell with current tools context if available
-                    // if (this.availableTools && this.availableTools.length > 0) {
-                    //     const toolsContext = {
-                    //         availableTools: this.availableTools,
-                    //         currentContext: this.context,
-                    //         sourceLocation: 'mcp-client'
-                    //     };
-                    //     this.ozwell.updateToolsContext(toolsContext);
-                    // }
+                    // Generate response using selected LLM provider
+                    const llmResponse = await this.llmManager.generateResponse(llmMessages);
                     
-                    // Generate response using Ozwell
-                    const ozwellResponse = await this.ozwell.generateResponse(ozwellMessages);
-                    
-                    // Check if Ozwell response contains tool calls
-                    const toolCalls = this.ozwell.parseToolCalls(ozwellResponse);
+                    // Parse tool calls using the LLM manager's provider-specific parser
+                    const toolCalls = this.llmManager.parseToolCalls(llmResponse, currentProvider);
                     
                     if (toolCalls && toolCalls.length > 0) {
-                        console.log('*** Ozwell suggested tool calls:', toolCalls);
+                        console.log('*** AI suggested tool calls:', toolCalls);
                         
-                        // Execute the first tool call suggested by Ozwell
+                        // Show detailed information about what tools the AI is suggesting
+                        const providerName = this.llmManager.getProviderName(currentProvider);
+                        
+                        if (toolCalls.length === 1) {
+                            const toolCall = toolCalls[0];
+                            this.addSystemMessage(`🔧 ${providerName} suggests using tool: ${toolCall.name} with parameters: ${JSON.stringify(toolCall.parameters)}`);
+                        } else {
+                            const toolSummary = toolCalls.map(tc => `${tc.name}(${Object.keys(tc.parameters).join(', ')})`).join(', ');
+                            this.addSystemMessage(`🔧 ${providerName} suggests using ${toolCalls.length} tools: ${toolSummary}`);
+                        }
+                        
+                        // Execute the first tool call suggested by the AI
                         const toolCall = toolCalls[0];
-                        this.addSystemMessage(`🔧 Ozwell suggests: ${toolCall.name}`);
                         await this.executeToolViaMCP(toolCall.name, toolCall.parameters);
                     } else {
-                        // No tool calls, just display Ozwell's response
-                        const formattedResponse = this.ozwell.formatResponse(ozwellResponse);
-                        this.addMessage(formattedResponse, 'assistant');
-                        this.chatHistory.push({ role: 'assistant', content: formattedResponse });
+                        // No tool calls, extract text content and display AI response
+                        const providerName = this.llmManager.getProviderName(currentProvider);
+                        this.addSystemMessage(`💬 ${providerName} provided a direct response (no tools suggested)`);
+                        
+                        let responseText = '';
+                        if (typeof llmResponse === 'object' && llmResponse.content) {
+                            responseText = llmResponse.content;
+                        } else if (typeof llmResponse === 'string') {
+                            responseText = llmResponse;
+                        } else {
+                            responseText = 'I received your message but couldn\'t generate a proper response.';
+                        }
+                        
+                        this.addMessage(responseText, 'assistant');
+                        this.chatHistory.push({ role: 'assistant', content: responseText });
                     }
                     
-                } catch (ozwellError) {
-                    console.error('Error invoking Ozwell:', ozwellError);
-                    this.addSystemMessage('❌ AI response error, falling back to context retrieval...');
+                } catch (llmError) {
+                    console.error('Error invoking LLM:', llmError);
                     
-                    // Fallback to getting context if Ozwell fails
-                    await this.executeToolViaMCP('getContext', {});
+                    if (llmError.message.includes('No LLM provider selected')) {
+                        this.addMessage('❌ No AI model selected. Please select and configure an AI model from the dropdown above.', 'assistant');
+                    } else if (llmError.message.includes('not configured')) {
+                        this.addMessage('❌ Selected AI model is not configured. Please configure your API key and settings.', 'assistant');
+                    } else {
+                        this.addSystemMessage('❌ AI response error, falling back to context retrieval...');
+                        // Fallback to getting context if LLM fails
+                        await this.executeToolViaMCP('getContext', {});
+                    }
                 }
             }
         } catch (error) {
