@@ -18,24 +18,28 @@ body {
 .agent-header {
     background: linear-gradient(135deg, #007bff, #0056b3);
     color: white;
-    padding: 15px 20px;
+    padding: 12px 15px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     flex-shrink: 0;
+    gap: 10px;
 }
 
 .agent-header h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 600;
+    flex-shrink: 0;
 }
 
 .status-indicator {
     display: flex;
     align-items: center;
     font-size: 12px;
+    flex-shrink: 1;
+    min-width: 60px;
 }
 
 .status-dot {
@@ -378,11 +382,33 @@ body {
 /* Mobile responsiveness */
 @media (max-width: 480px) {
     .agent-header {
-        padding: 12px 15px;
+        padding: 8px 12px;
+        gap: 8px;
     }
     
     .agent-header h2 {
-        font-size: 16px;
+        font-size: 14px;
+    }
+    
+    .llm-selector {
+        gap: 4px;
+        font-size: 11px;
+    }
+    
+    .llm-selector select {
+        min-width: 70px;
+        max-width: 80px;
+        font-size: 11px;
+        padding: 3px 6px;
+    }
+    
+    .llm-selector button {
+        font-size: 10px;
+        padding: 3px 6px;
+    }
+    
+    .status-indicator {
+        font-size: 10px;
     }
     
     .chat-container {
@@ -492,23 +518,27 @@ body {
 .llm-selector {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 14px;
+    gap: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .llm-selector label {
     font-weight: 500;
     margin: 0;
+    font-size: 12px;
 }
 
 .llm-selector select {
-    padding: 5px 10px;
+    padding: 3px 6px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.1);
     color: white;
-    font-size: 14px;
-    min-width: 120px;
+    font-size: 11px;
+    min-width: 80px;
+    max-width: 100px;
 }
 
 .llm-selector select option {
@@ -517,14 +547,15 @@ body {
 }
 
 .llm-selector button {
-    padding: 5px 10px;
+    padding: 3px 6px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.1);
     color: white;
-    font-size: 12px;
+    font-size: 10px;
     cursor: pointer;
     transition: background-color 0.2s ease;
+    white-space: nowrap;
 }
 
 .llm-selector button:hover {

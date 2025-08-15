@@ -199,7 +199,7 @@ class OzwellAgentSimulator {
             position: fixed;
             top: 20px;
             right: 20px;
-            width: 400px;
+            width: 500px;
             height: 600px;
             border: 2px solid #007bff;
             border-radius: 8px;
@@ -208,9 +208,9 @@ class OzwellAgentSimulator {
             background: white;
             resize: both;
             overflow: hidden;
-            min-width: 300px;
+            min-width: 350px;
             min-height: 400px;
-            max-width: 800px;
+            max-width: 900px;
             max-height: 900px;
         `;
 
@@ -408,9 +408,9 @@ class OzwellAgentSimulator {
             const newHeight = startHeight + e.clientY - startY;
 
             // Apply constraints
-            const minWidth = 300;
+            const minWidth = 350;
             const minHeight = 400;
-            const maxWidth = 800;
+            const maxWidth = 900;
             const maxHeight = 900;
 
             const constrainedWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
@@ -458,7 +458,7 @@ class OzwellAgentSimulator {
             medicalDataManager.log("Agent iframe expanded");
         } else {
             // Restore saved size or default
-            this.iframeContainer.style.width = this.savedWidth || '400px';
+            this.iframeContainer.style.width = this.savedWidth || '500px';
             this.iframeContainer.style.height = this.savedHeight || '600px';
             expandBtn.innerHTML = '⟐';
             expandBtn.title = 'Expand';

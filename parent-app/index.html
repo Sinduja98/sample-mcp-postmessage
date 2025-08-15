@@ -132,7 +132,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Ozwell Medical AI - Integration Demo</h1>
+        <h1>Sample EHR - AI Embed</h1>
         
         <div class="status-bar">
             <span>🏥 Medical System Ready</span>
@@ -155,7 +155,7 @@
         </div>
         
         <div>
-            <h3>System Logs</h3>
+            <h3>EHR logs</h3>
             <div id="logContainer"></div>
         </div>
     </div>
@@ -205,108 +205,108 @@
             }
 
             // MCP Server Function: Get Context
-            getContext() {
-                this.log("getContext() called");
-                return {
-                    success: true,
-                    data: JSON.parse(JSON.stringify(this.patientData)) // Deep copy
-                };
-            }
+            // getContext() {
+            //     this.log("getContext() called");
+            //     return {
+            //         success: true,
+            //         data: JSON.parse(JSON.stringify(this.patientData)) // Deep copy
+            //     };
+            // }
 
             // MCP Server Function: Add Medication
-            addMedication(medication) {
-                this.log(`addMedication() called with:`, medication);
+            // addMedication(medication) {
+            //     this.log(`addMedication() called with:`, medication);
                 
-                const newMed = {
-                    id: `med-${Date.now()}`,
-                    name: medication.name,
-                    dose: medication.dose,
-                    frequency: medication.frequency,
-                    indication: medication.indication || "Not specified",
-                    startDate: new Date().toISOString().split('T')[0]
-                };
+            //     const newMed = {
+            //         id: `med-${Date.now()}`,
+            //         name: medication.name,
+            //         dose: medication.dose,
+            //         frequency: medication.frequency,
+            //         indication: medication.indication || "Not specified",
+            //         startDate: new Date().toISOString().split('T')[0]
+            //     };
 
-                this.patientData.medications.push(newMed);
+            //     this.patientData.medications.push(newMed);
                 
-                return {
-                    success: true,
-                    data: newMed,
-                    message: `Successfully added ${medication.name} to medication list`
-                };
-            }
+            //     return {
+            //         success: true,
+            //         data: newMed,
+            //         message: `Successfully added ${medication.name} to medication list`
+            //     };
+            // }
 
-            // MCP Server Function: Discontinue Medication
-            discontinueMedication(medId) {
-                this.log(`discontinueMedication() called with ID: ${medId}`);
+            // // MCP Server Function: Discontinue Medication
+            // discontinueMedication(medId) {
+            //     this.log(`discontinueMedication() called with ID: ${medId}`);
                 
-                const medIndex = this.patientData.medications.findIndex(med => 
-                    med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
-                );
+            //     const medIndex = this.patientData.medications.findIndex(med => 
+            //         med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
+            //     );
 
-                if (medIndex === -1) {
-                    return {
-                        success: false,
-                        error: `Medication with ID/name '${medId}' not found`
-                    };
-                }
+            //     if (medIndex === -1) {
+            //         return {
+            //             success: false,
+            //             error: `Medication with ID/name '${medId}' not found`
+            //         };
+            //     }
 
-                const removedMed = this.patientData.medications.splice(medIndex, 1)[0];
+            //     const removedMed = this.patientData.medications.splice(medIndex, 1)[0];
                 
-                return {
-                    success: true,
-                    data: removedMed,
-                    message: `Successfully discontinued ${removedMed.name}`
-                };
-            }
+            //     return {
+            //         success: true,
+            //         data: removedMed,
+            //         message: `Successfully discontinued ${removedMed.name}`
+            //     };
+            // }
 
-            // MCP Server Function: Edit Medication
-            editMedication(medId, updates) {
-                this.log(`editMedication() called with ID: ${medId}`, updates);
+            // // MCP Server Function: Edit Medication
+            // editMedication(medId, updates) {
+            //     this.log(`editMedication() called with ID: ${medId}`, updates);
                 
-                const med = this.patientData.medications.find(med => 
-                    med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
-                );
+            //     const med = this.patientData.medications.find(med => 
+            //         med.id === medId || med.name.toLowerCase() === medId.toLowerCase()
+            //     );
 
-                if (!med) {
-                    return {
-                        success: false,
-                        error: `Medication with ID/name '${medId}' not found`
-                    };
-                }
+            //     if (!med) {
+            //         return {
+            //             success: false,
+            //             error: `Medication with ID/name '${medId}' not found`
+            //         };
+            //     }
 
-                Object.assign(med, updates);
+            //     Object.assign(med, updates);
                 
-                return {
-                    success: true,
-                    data: med,
-                    message: `Successfully updated ${med.name}`
-                };
-            }
+            //     return {
+            //         success: true,
+            //         data: med,
+            //         message: `Successfully updated ${med.name}`
+            //     };
+            // }
 
-            // MCP Server Function: Delete Medication
-            deleteMedication(medId) {
-                return this.discontinueMedication(medId); // Same functionality
-            }
+            // // MCP Server Function: Delete Medication
+            // deleteMedication(medId) {
+            //     return this.discontinueMedication(medId); // Same functionality
+            // }
 
-            // MCP Server Function: Add Allergy
-            addAllergy(allergy) {
-                this.log(`addAllergy() called with:`, allergy);
+            // // MCP Server Function: Add Allergy
+            // addAllergy(allergy) {
+            //     this.log(`addAllergy() called with:`, allergy);
                 
-                const newAllergy = {
-                    id: `allergy-${Date.now()}`,
-                    allergen: allergy.allergen,
-                    reaction: allergy.reaction || "Unknown reaction",
-                    severity: allergy.severity || "Unknown"
-                };
+            //     const newAllergy = {
+            //         id: `allergy-${Date.now()}`,
+            //         allergen: allergy.allergen,
+            //         reaction: allergy.reaction || "Unknown reaction",
+            //         severity: allergy.severity || "Unknown"
+            //     };
 
-                this.patientData.allergies.push(newAllergy);
+            //     this.patientData.allergies.push(newAllergy);
                 
-                return {
-                    success: true,
-                    data: newAllergy,
-                    message: `Successfully added allergy to ${allergy.allergen}`
-                };
-            }
+            //     return {
+            //         success: true,
+            //         data: newAllergy,
+            //         message: `Successfully added allergy to ${allergy.allergen}`
+            //     };
+            // }
 
             // Utility function for logging
             log(message, data = null) {
@@ -711,7 +711,7 @@
                     position: fixed;
                     top: 20px;
                     right: 20px;
-                    width: 420px;
+                    width: 520px;
                     height: 650px;
                     border: 2px solid #007bff;
                     border-radius: 8px;
@@ -726,7 +726,7 @@
                     position: fixed;
                     top: -22px;
                     right: 20px;
-                    width: 420px;
+                    width: 520px;
                     height: 40px;
                     background: linear-gradient(135deg, #007bff, #0056b3);
                     color: white;
