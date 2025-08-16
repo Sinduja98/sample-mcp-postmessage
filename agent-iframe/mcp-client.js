@@ -1,8 +1,13 @@
 // MCP Client - Updated to use MCP Tools directly instead of Ozwell responses
+
+// Import MedicalDataManager from parent-app
+import { MedicalDataManager } from '../parent-app/medical-data.js';
+
 class MCPClient {
     constructor() {
         this.llmManager = new LLMManager();
         this.ozwell = new OzwellIntegration(); // Used for message analysis, not response generation
+        this.medicalDataManager = new MedicalDataManager();
         this.chatHistory = [];
         this.requestCounter = 0;
         this.mcpServer = null;
@@ -364,6 +369,47 @@ class MCPClient {
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
     }
 
+    // Add logging function that sends to EHR logs
+    // log(message, data = null) {
+    //     // Log to console for debugging
+    //     console.log(`[MCP Client] ${message}`, data);
+        
+    //     // Send to parent window for display in EHR logs
+    //     try {
+    //         window.parent.postMessage({
+    //             type: 'mcp-log',
+    //             source: 'mcp-client',
+    //             message: message,
+    //             data: data
+    //         }, '*');
+    //     } catch (error) {
+    //         // Parent not available or cross-origin, just log to console
+    //         console.log('Could not send log to parent:', error.message);
+    //     }
+    // }
+        log(message, data = null) {
+        const timestamp = new Date().toLocaleTimeString();
+        
+        // Always log to console
+        console.log(`[${timestamp}] ${message}`, data);
+        
+        // Send log message to medical MCP server for display in EHR logs
+        try {
+            const logMessage = {
+                type: 'mcp-log',
+                source: 'mcp-client',
+                message: message,
+                data: data,
+                timestamp: timestamp
+            };
+            // Send to medical MCP server via postMessage
+            window.postMessage(logMessage, '*');
+        } catch (error) {
+            // MCP server not available or error occurred, just log to console
+            console.log('Could not send log to MCP server:', error.message);
+        }
+    }
+
     async sendMessage() {
         const message = this.userInput.value.trim();
         if (!message) return;
@@ -412,7 +458,7 @@ class MCPClient {
         
         try {
             // Analyze user message to determine appropriate MCP tool action
-            const toolAction = this.analyzeMessageForToolAction(message);
+            // const toolAction = this.analyzeMessageForToolAction(message);
             
             // if (toolAction) {
             //     console.log('*** Determined tool action:', toolAction);
@@ -448,6 +494,16 @@ class MCPClient {
                     
                     if (toolCalls && toolCalls.length > 0) {
                         console.log('*** AI suggested tool calls:', toolCalls);
+                        
+                        // Log the AI tool suggestion
+                        // this.log(`AI Suggested Tool Calls`, {
+                        //     provider: currentProvider,
+                        //     toolCalls: toolCalls
+                        // });
+                        this.log(
+                            `AI Suggested Tool Calls from ${this.llmManager.getProviderName(currentProvider)}:${toolCalls} `, 
+                             );
+                        
                         
                         // Show detailed information about what tools the AI is suggesting
                         const providerName = this.llmManager.getProviderName(currentProvider);
@@ -515,6 +571,9 @@ class MCPClient {
             requestId
         });
         
+        // Log the tool call execution
+        this.log(`Tool Call: ${toolName}`);
+        
         // Send tool execution request to MCP Server via postMessage
         window.postMessage({
             type: 'mcp-execute-tool',
@@ -574,6 +633,12 @@ class MCPClient {
         if (success) {
             this.addSystemMessage(`✅ ${toolName} executed successfully`);
             
+            // Log the successful tool execution result
+            this.log(`Tool Result: ${toolName} SUCCESS`, {
+                result: result,
+                message: message
+            });
+            
             // Format and display the response from MCP server
             let responseText = this.formatMCPResponse(toolName, result, message);
             
@@ -583,6 +648,12 @@ class MCPClient {
             
         } else {
             this.addSystemMessage(`❌ ${toolName} failed: ${error}`);
+            
+            // Log the failed tool execution
+            this.log(`Tool Result: ${toolName} FAILED`, {
+                error: error,
+                requestId: requestId
+            });
             
             // Add error response
             const errorResponseText = `I encountered an error while trying to ${toolName}: ${error}. Please check the details and try again.`;

@@ -144,6 +144,15 @@ class MedicalMCPServer {
                     // Send available tools to MCP Client
                     this.sendAvailableTools();
                     break;
+                case 'mcp-log':
+                    window.parent.postMessage({
+                        type: 'mcp-log-reponse',
+                        source: 'mcp-server',
+                        message: event.data.message,
+                        data: event.data.data || null,
+                        timestamp: new Date().toISOString()
+                    }, '*');
+                    break;
                     
                 case 'mcp-execute-tool':
                     // Execute tool requested by MCP Client
@@ -472,6 +481,18 @@ class MedicalMCPServer {
     sendToolResponse(toolName, result, requestId = null) {
         console.log(`MCP Server: Sending response for ${toolName}:`, result);
         
+        // Log to parent window for display in EHR logs
+        try {
+            window.parent.postMessage({
+                type: 'mcp-log',
+                source: 'mcp-server',
+                message: `Tool ${toolName} executed: ${result.success ? 'SUCCESS' : 'FAILED'}`,
+                data: result
+            }, '*');
+        } catch (error) {
+            console.log('Could not send log to parent:', error.message);
+        }
+        
         // Send response to MCP Client via postMessage
         window.postMessage({
             type: 'mcp-tool-response',
@@ -509,6 +530,19 @@ class MedicalMCPServer {
     // Handle tool execution request from MCP Client
     handleToolExecution(toolName, parameters, requestId) {
         console.log(`MCP Server: Handling tool execution request for ${toolName}:`, parameters);
+        
+        // Log the incoming tool execution request
+        try {
+            window.parent.postMessage({
+                type: 'mcp-log',
+                timestamp: new Date().toISOString(),
+                message: `Received tool execution request: ${toolName}`,
+                data: parameters,
+                source: 'mcp-server'
+            }, '*');
+        } catch (error) {
+            console.log('Could not send log to parent:', error.message);
+        }
         
         // Execute the tool and send response
         this.executeTool(toolName, parameters, requestId);
