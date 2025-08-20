@@ -1,28 +1,25 @@
-// Main entry point for agent iframe
-import { MCPClient } from './mcp-client.js';
+// Main initialization script for Medical MCP Agent
+console.log('*** Initializing Medical MCP Agent ***');
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        // Create and initialize the MCPClient
-        window.mcpClient = await new MCPClient().initialize();
-        
-        // Update status indicator
-        const statusText = document.getElementById('statusText');
-        const statusDot = document.querySelector('.status-dot');
-        if (statusText && statusDot) {
-            statusText.textContent = 'Connected';
-            statusDot.classList.add('connected');
-        }
+// Global reference to MCP client for configuration modal access
+window.mcpClient = null;
 
-        console.log('MCP Client initialized successfully');
-    } catch (error) {
-        console.error('Error initializing MCP client:', error);
-        const statusText = document.getElementById('statusText');
-        const statusDot = document.querySelector('.status-dot');
-        if (statusText && statusDot) {
-            statusText.textContent = 'Error connecting';
-            statusDot.classList.add('error');
-        }
+// Initialize MCP Client when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('*** DOM loaded, creating MCP Client ***');
+    
+    // Create and initialize the MCP client
+    window.mcpClient = new MCPClient();
+    
+    console.log('*** MCP Client initialized ***');
+});
+
+// Listen for messages from parent about tools context
+window.addEventListener('message', (event) => {
+    if (event.data.type === 'mcp-tools-context') {
+        console.log('*** Main.js received tools context message ***', event.data.toolsContext);
+        // The tools context has been passed to Ozwell via the MCP client
     }
 });
+
+console.log('*** Main.js loaded ***');

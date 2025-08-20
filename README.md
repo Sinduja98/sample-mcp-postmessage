@@ -126,3 +126,30 @@ Access:
 3. **Add proper error handling** and rate limiting
 4. **Test with real medical scenarios**
 5. **Add medical safety and compliance features**
+
+## Environment Configuration
+
+### API Keys Setup
+
+1. **Copy the environment template:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Add your API credentials to `.env`:**
+   ```env
+   OZWELL_API_KEY=your_actual_api_key_here
+   OZWELL_BASE_URL=https://ai.bluehive.com/api/v1/completion
+   OZWELL_MODEL=ozwell-medical-v1
+   FORCE_SIMULATION_MODE=false
+   ```
+
+3. **The `.env` file is automatically loaded by the application**
+   - The API key will be fetched from the environment variable
+   - Fallback to hardcoded values if `.env` file is not available
+   - Never commit the `.env` file to version control (it's in `.gitignore`)
+
+### Security Notes
+- Keep your API keys secure and never commit them to version control
+- Use `.env.example` as a template for other developers
+- The application will fall back to hardcoded values if environment loading fails

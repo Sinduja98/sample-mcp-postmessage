@@ -4,16 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical MCP Agent</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
-    <script type="module" src="main.js"></script>
-    <script type="module" src="mcp-client.js"></script>
+    <script type="module" src="llm-manager.js"></script>
     <script type="module" src="medical-mcp-server.js"></script>
     <script type="module" src="ozwell-integration.js"></script>
+    <script type="module" src="mcp-client.js"></script>
+    <script type="module" src="main.js"></script>
 </head>
 <body>
     <div class="agent-container">
         <div class="agent-header">
             <h2>🏥 Medical AI Copilot</h2>
+            <div class="llm-selector">
+                <label for="llmDropdown">AI Model:</label>
+                <select id="llmDropdown">
+                    <option value="">Select AI Model</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="ozwell">Ozwell</option>
+                </select>
+                <button id="configureButton" style="display: none;">⚙️ Configure</button>
+            </div>
             <div class="status-indicator" id="statusIndicator">
                 <span class="status-dot"></span>
                 <span id="statusText">Initializing...</span>
@@ -32,7 +43,5 @@
             <button id="sendButton">Send</button>
         </div>
     </div>
-
-    <script type="module" src="main.js"></script>
 </body>
 </html>

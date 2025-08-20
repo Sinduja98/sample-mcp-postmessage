@@ -18,24 +18,28 @@ body {
 .agent-header {
     background: linear-gradient(135deg, #007bff, #0056b3);
     color: white;
-    padding: 15px 20px;
+    padding: 12px 15px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     flex-shrink: 0;
+    gap: 10px;
 }
 
 .agent-header h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 600;
+    flex-shrink: 0;
 }
 
 .status-indicator {
     display: flex;
     align-items: center;
     font-size: 12px;
+    flex-shrink: 1;
+    min-width: 60px;
 }
 
 .status-dot {
@@ -378,11 +382,33 @@ body {
 /* Mobile responsiveness */
 @media (max-width: 480px) {
     .agent-header {
-        padding: 12px 15px;
+        padding: 8px 12px;
+        gap: 8px;
     }
     
     .agent-header h2 {
-        font-size: 16px;
+        font-size: 14px;
+    }
+    
+    .llm-selector {
+        gap: 4px;
+        font-size: 11px;
+    }
+    
+    .llm-selector select {
+        min-width: 70px;
+        max-width: 80px;
+        font-size: 11px;
+        padding: 3px 6px;
+    }
+    
+    .llm-selector button {
+        font-size: 10px;
+        padding: 3px 6px;
+    }
+    
+    .status-indicator {
+        font-size: 10px;
     }
     
     .chat-container {
@@ -486,4 +512,129 @@ body {
     100% {
         background-position: 200% 0;
     }
+}
+
+/* LLM Selector Styles */
+.llm-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.llm-selector label {
+    font-weight: 500;
+    margin: 0;
+    font-size: 12px;
+}
+
+.llm-selector select {
+    padding: 3px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 11px;
+    min-width: 80px;
+    max-width: 100px;
+}
+
+.llm-selector select option {
+    background: #333;
+    color: white;
+}
+
+.llm-selector button {
+    padding: 3px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+}
+
+.llm-selector button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Configuration Modal Styles */
+.config-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.config-modal-content {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    max-width: 400px;
+    width: 90%;
+}
+
+.config-modal h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+}
+
+.config-form-group {
+    margin-bottom: 15px;
+}
+
+.config-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #555;
+}
+
+.config-form-group input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.config-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.config-buttons button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.config-buttons .save-btn {
+    background: #007bff;
+    color: white;
+}
+
+.config-buttons .cancel-btn {
+    background: #6c757d;
+    color: white;
+}
+
+.config-buttons button:hover {
+    opacity: 0.9;
 }
